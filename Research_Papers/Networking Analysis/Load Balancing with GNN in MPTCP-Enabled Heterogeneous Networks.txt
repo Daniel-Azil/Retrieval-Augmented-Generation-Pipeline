@@ -1,0 +1,1446 @@
+arXiv:2410.17118v1 [cs.LG] 22 Oct 2024
+1
+Learning Load Balancing with GNN in
+MPTCP-Enabled Heterogeneous Networks
+Han Ji, Student Member, IEEE, Xiping Wu, Senior Member, IEEE, Zhihong Zeng, Chen Chen, Senior Member,
+IEEE
+Abstract—Hybrid light fidelity (LiFi) and wireless fidelity
+(WiFi) networks are a promising paradigm of heterogeneous
+network (HetNet), attributed to the complementary physica
+l
+properties of optical spectra and radio frequency. However, the
+current development of such HetNets is mostly bottlenecked
+by the existing transmission control protocol (TCP), which
+restricts the user equipment (UE) to connecting one access point
+(AP) at a time. While the ongoing investigation on multipath
+TCP (MPTCP) can bring significant benefits, it complicates
+the network topology of HetNets, making the existing load
+balancing (LB) learning models less effective. Driven by this, we
+propose a graph neural network (GNN)-based model to tackle
+the LB problem for MPTCP-enabled HetNets, which results
+in a partial mesh topology. Such a topology can be modeled
+as a graph, with the channel state information and data rate
+requirement embedded as node features, while the LB solutions
+are deemed as edge labels. Compared to the conventional deep
+neural network (DNN), the proposed GNN-based model exhibit
+s
+two key strengths: i) it can better interpret a complex network
+topology; and ii) it can handle various numbers of APs and UEs
+with a single trained model. Simulation results show that against
+the traditional optimisation method, the proposed learning model
+can achieve near-optimal throughput within a gap of 11.5%,
+while reducing the inference time by 4 orders of magnitude. I
+n
+contrast to the DNN model, the new method can improve the
+network throughput by up to 21.7%, at a similar inference tim
+e
+level.
+Index Terms—Heterogeneous network (HetNet), load balancing
+(LB), resource allocation, multipath transmission control protocol
+(MPTCP), machine learning, graph neural network (GNN)
+I. INTRODUCTION
+O
+N the road towards the sixth generation (6G) communication systems, heterogeneous networks (HetNets) are
+widely recognised as a trending technology to support the 6G
+vision in terms of fully exploring all spectra [
+1], [
+2]. With
+the ongoing development of optical wireless communication
+technologies, the optical spectrum plays a significant role in
+6G due to the potential of providing vast and license-free spectrum resources. As a variant of visible light communication
+The work of H. Ji is supported by the China Scholarship Counci
+l
+(Grant No. 202106620012). Prof. Wu gracefully acknowledges the support
+of the National Natural Science Foundation of China (NSFC). This paper
+was accepted in part at IEEE ICCT 2024. Corresponding author: Xiping Wu
+and Zhihong Zeng.
+H. Ji is with the School of Electrical and Electronic Engineering, University College Dublin, Dublin, D04 V1W8, Ireland (e-mail:
+han.ji@ucdconnect.ie).
+X. Wu is with the School of Information Science and Engineering,
+Southeast University, Nanjing 210096, China, and as a Visiting Professor
+with the School of Electrical and Electronic Engineering, University College
+Dublin, Dublin, D04 V1W8, Ireland (e-mail: xiping.wu@seu.edu.cn).
+Z. Zeng and C. Chen are with the School of Microelectronics and Communication Engineering, Chongqing University, Chongqing 400000, China.
+(e-mail:
+{zhihong.zeng, c.chen
+}@cqu.edu.cn).
+(VLC), light fidelity (LiFi) is capable of providing communi
+-
+cation and illumination services simultaneously, rendering an
+energy-efficient wireless technology [
+3]. Other advantages of
+LiFi include high transmission speeds, availability in radiofrequency (RF) restricted areas, high physical layer security,
+etc. Meanwhile, LiFi is susceptible to several key issues such
+as limited coverage range, channel blockage, and mobility
+management. In contrast, WiFi can provide robust and ubiquitous connections but less capacious bandwidth resources.
+Motivated by this, hybrid LiFi and wireless fidelity (WiFi)
+networks (HLWNets) have attracted an increasing amount of
+attention in recent years [
+4], [
+5]. As an emerging network
+paradigm of HetNet, the HLWNet is capable of combining the
+complementary advantages of optical and radio spectra. How
+-
+ever, due to the heterogeneity of access points (APs) in HetNet,
+WiFi APs are more prone to experience traffic overload than
+LiFi APs. As a result, load balancing (LB) becomes a critical
+issue that can significantly affect the network performance of
+the HetNets. In this paper, HLWNets are considered as an
+exemplified case of HetNets to investigate the challenging L
+B
+problem.
+A. Related Work
+The existing LB methods in HLWNets mostly formulate a
+joint AP selection and resource allocation problem [
+6]–[
+9],
+considering that each user equipment (UE) connected to one
+AP only, under the constraint of the traditional transmission
+control protocol (TCP). These methods can be classified into
+four categories: i) global optimisation methods such as [
+6]; ii)
+iterative methods like game theory [
+7]; iii) decision-making
+methods, e.g., fuzzy logic [
+8]; and iv) machine learning such
+as deep neural network (DNN) [
+9]. Among the above methods,
+machine learning has been proven to reach a better trade-off
+between optimality and computational complexity than the
+traditional optimisation methods reported in [
+6]–[
+8]. Recent
+results show that learning-aided LB methods for the TCPbased HLWNet can achieve an inference time as low as submilliseconds [10], having the potential to meet the ultra-low
+latency requirement of 6G. A summary of related literature i
+s
+given in Table
+I
+.
+However, the traditional TCP hinders UEs from enjoying
+the benefits of different access technologies at the same time.
+Meanwhile, multipath TCP (MPTCP), which is an ongoing
+effort of the Internet Engineering Task Force (IETF), aims
+to enable the simultaneous usage of multiple APs. Note that
+MPTCP is particularly beneficial in the context of HetNet [19], since it can gain an aggregated throughput through
+2
+TABLE I
+RELATED WORK ON LEARNING METHODS FOR LOAD BALANCING. (X: SUPPORTED, ✕: NOT SUPPORTED, UAV: UNMANNED AERIAL VEHICLE, BBU:
+BASEBAND UNIT, AN: AGGREGATION NODES, RRH: REMOTE RADIO HEADS, MPNN: MESSAGE PASS ING NEURAL NETWORK)
+Ref. Method Network Scenario Network Scale1 Compatibility2 MPTCP Remark
+[9] DNN HomNet (LiFi) 4 APs, 4 UEs ✕
+✕
+Work in a realistic LiFi environment
+[10] Adaptive TCNN HetNet (LiFi&WiFi) 17 APs, 50 UEs X User-centric with adaption to various UE numbers
+[11] Deep Q-network HetNet (RF&VLC) 5 APs, 55 UEs ✕ Need transfer learning for an unseen UE
+[12] Deep RL HetNet (UAV&Cellular) 10 UAVs, 15 UEs ✕ Joint positioning-association-beamforming design
+[13] GNN HomNet (D2D) 50 Nodes X Consider each D2D pair as a node
+[14] GNN HomNet (Cellular) 50 Nodes X Consider each transceiver pair as a node
+[15] GNN HomNet (FSO) 15 Nodes X FSO graph includes 1 BBU, 4 ANs, and 10 RRHs
+[16] GNN with RL HomNet (V2X) 300 Nodes X 100 vehicles with 300 V2X links
+[17] TCNN HetNet (LiFi&WiFi) 17 APs, 50 UEs ✕
+X
+User-centric resource allocation for a target UE
+[18] GNN Wired network 28 Nodes X MPNN for cross-layer optimization
+This work GNN HetNet (LiFi&WiFi) 76 Nodes X Adopt graph attention network
+inverse multiplexing. Apart from that, MPTCP can add or
+drop links without disrupting the end-to-end communication
+service, avoiding the issue caused by frequent handovers in
+ultra-dense networks such as LiFi. In [20], an optimisation
+problem was formulated to tackle the LB task in an MPTCPenabled HLWNet. However, this work only considers two
+subflows, one WiFi and one LiFi. To allow for multiple
+LiFi subflows, the concept of parallel transmission LiFi was
+introduced in [21], where the corresponding LB issue was
+investigated through an iterative approach. Further, the authors
+in [22] developed a reinforcement learning (RL) model to
+assign the resource allocation coefficients of multiple subflows
+in HLWNets. Nonetheless, this method presents two major
+limitations. First, the method is network-centric, that is it
+has to make the decision for the UEs all together, limiting
+its practicability and flexibility. Second, the method aims
+to maximise the sum throughput with proportional fairness
+among the subflows, but this does not necessarily ensure
+proportional fairness among the UEs. In [17], a user-centric
+learning model was developed upon DNN to solve the LB
+problem in MPTCP-enabled HLWNets, considering different
+cases of subflow numbers. However, this approach would
+require a dedicated model for each scenario of the network
+scale, and hence lack of generality and compatibility.
+Graph neural network (GNN) has been recently introduced
+to handle the wireless network management [23], [24], due
+to the graphical nature of the network topology. Specifically,
+the APs are deemed as the nodes, while the wireless links
+are considered as the edges in GNN, which can learn the
+representation in the node, edge, and graph levels through
+message passing between the nodes. Compared with the
+1The network scale here refers to the maximum network size considered
+in the corresponding reference. In DNN models, the network size depends
+on the product of the number of APs and the number of UEs. As for GNN
+models, the network size is counted by the number of nodes, which is the
+sum of AP and UE nodes.
+2The compatibility here indicates whether a learning model can tackle
+different network sizes without the restructuring or retraining. For most DNN
+methods, a dedicated model would be required for a certain network size,
+due to the fixed structure of neural networks. As for RL, its model can suit
+a dynamic network size but needs to retrain the coefficients.
+DNN and convolutional neural network (CNN) models, the
+GNN model can rely on fewer training samples to achieve a
+better generalisation performance [23]. Apart from that, due
+to the permutation property [25], GNN can handle different
+network scales with a single trained model, exhibiting strong
+compatibility which is crucial for the learning methods. For
+these reasons, a number of works have studied the GNN
+model to cope with the LB task [13]–[16]. In [13], the
+resource allocation issue in device-to-device (D2D) networks
+is addressed using GNN, where the desirable D2D links are
+modeled as nodes and the harmful interference links are modeled as edges. Similar GNN-based methods are also developed
+for other network scenarios, such as the cellular [14], freespace optical (FSO) [15], and vehicle-to-everything (V2X)
+[16] networks. However, the above studies all investigate the
+LB issue in a homogeneous network (HomNet), whereas the
+HetNets face a more challenging LB task as explained. Apart
+from that, they are subject to TCP and fail to address the
+exploitation of GNN for MPTCP, which would fundamentally
+change the network topology and complicate the process of
+message passing. To date, only a few studies have explored
+GNN to solve the LB problem in an MPTCP scenario, e.g.,
+[18]. However, [18] considers a wired network, where graphstructure learning is relatively simple since the connections
+between the nodes are fixed. In contrast, MPTCP-enabled
+HetNets confront dynamic connections between the nodes,
+challenging the graph-structure learning in GNN.
+B. Motivations and Contributions
+Despite the success of conventional deep learning methods,
+such as DNNs and CNNs, on data with an Euclidean structure
+(e.g., grid-like images), they struggle to work well when
+applied to data with non-Euclidean structures (e.g., social
+networks and wireless networks). This limitation is particularly
+evident in the context of the LB problem in wireless networks,
+which usually have a graph-based extended star topology.
+Although notable efforts have been made to address this
+limitation by considering GNN models, the LB problem in
+MPTCP-enabled HetNet remains unresolved and continues to
+3
+pose significant challenges. When it comes to the ongoing
+MPTCP, the network topology is further complicated to partial
+mesh topology with intricate inter-node relationships. For
+example, from the UE’s perspective, the multi-connected APs
+are seen as cooperators, while from the AP’s perspective, the
+multi-served UEs are regarded as competitors. To the best
+knowledge of the authors, the GNN-based LB approach has
+yet to be developed for MPTCP-enabled HetNets.
+In this paper, we propose a novel GNN-aided LB method
+to address the tricky problem of resource allocation in the
+MPTCP-enabled HetNet. The proposed GNN model treats
+each AP and UE as a node, while considering each existing
+subflow between the APs and UEs as an edge. Three key
+parameters are involved as inputs: i) the channel state information (CSI) of each subflow, ii) the data rate requirement of
+each UE, and iii) the status of subflow connections. The main
+contributions of this paper are summarized as follows:
+• We extend the HLWNets from traditional TCP to an
+MPTCP-enabled HetNet, enhancing multipath multiplexing capabilities and ensuring more reliable connectivity.
+In such an MPTCP-based HetNet, the wireless networks
+are modeled as a graph, and the resource allocation is
+formulated as a graph optimisation problem to tackle.
+• We propose a novel GNN-aided model for resource allocation in MPTCP-enabled HetNet. The proposed GNN
+model aggregates information from neighboring nodes
+using a multi-head attention mechanism. Unlike the transductive learning approach used in DNN models, our GNN
+model employs an inductive learning approach to ensure
+scalability across different model sizes.
+• We evaluate the effectiveness, superiority, and scalability
+of the proposed GNN model by comparing it with other
+benchmarks, including optimal methods and DNN-based
+learning approaches. Numerical results show that the
+proposed GNN model can increase the sum rate by up to
+21.7% compared to other DNN methods. Additionally,
+the inference time of the GNN model remains at the
+same sub-millisecond level as other DNN models, while
+reducing runtime by up to 99.99% compared to the
+optimal method.
+The remainder of this paper is organised as follows. Section
+II describes the heterogeneous network setup, the corresponding channel model, and problem formulation. The proposed
+GNN-aided model is elaborated in the following Section III. In
+Section IV-A, extensive simulations are conducted to compare
+the performance of GNN model against other benchmarks.
+Finally, Section V concludes the paper.
+II. SYSTEM MODEL
+In this section, the system model of the MPTCP-enabled
+HetNet is introduced, including the network setup, channel
+model, and problem formulation for resource allocation.
+A. Network Setup
+In Fig. 1, an indoor HetNet environment is considered in
+this paper. Such a hybrid network consists of one WiFi AP
+and multiple LiFi APs (the number of 4 is exemplified in Fig.
+<+=+2/>
+?+=+2/>
+@A
+"
+#
+$
+.<
+/<
+.<
+Fig. 1. Schematic diagram of an MPTCP-enable HetNet.
+1) in a room area L×W ×H (length, width, and height). The
+LiFi APs are arranged in a square grid on the ceiling with
+a separation distance of d0, while the WiFi AP is located at
+the centre of the room at the height of a table, given by h0.
+Let Na and Nu denote the number of APs and the number
+of UEs, respectively. Let S = {1, 2, ..., Na} denote the set of
+APs, and the set of UEs is U = {1, 2, ..., Nu}. Let i and j
+denote the index of APs and the index of UEs, where i ∈ S
+and j ∈ U, respectively. Unlike the TCP, MPTCP enables
+each UE to be served by multiple APs at the same time. Let
+Nf denote the number of subflows that are connected by one
+UE. In this paper, each UE adopts Nf − 1 LiFi links of the
+best channel quality, in addition to the WiFi link for ensuring
+reliable connectivity. As shown in Fig. 1, a case of Nf = 3 is
+presented, where the UE is connected to the WiFi AP and two
+LiFi APs simultaneously. Wavelength-division multiplexing
+can be adopted to enable the parallel transmission of multiple
+LiFi links, and the setup details are referred to [21]. Each AP
+can serve multiple UEs via time-division multiple access.
+B. Channel Model
+1) LiFi channel model: The LiFi channel is contributed
+by two components: line-of-sight (LoS) and non-line-of-sight
+(NLoS) paths. The LoS channel gain can be modeled as a
+generalized Lambertian radiation pattern [26], formulated as:
+H
+i,j
+LoS =
+(m + 1)Apd
+2πd2
+i,j
+cosm(φi,j )gf gc cos(ψi,j ), (1)
+where m is the Lambertian order expressed as m =
+−1/log2
+(cos(Φ1/2)) and Φ1/2 is the LED semi-intensity radiation angle; Apd is the physical area of receiver photon
+detector; di,j is the direct Euclidean distance between the AP
+i and the UE j; φi,j and ψi,j are irradiance and incidence
+angles, respectively; gf and gc are the optical filter gain and
+4
+the concentrator gain. For simplicity, the NLoS channel gain
+is referred to [8, eq. (3)], denoted as H
+i,j
+NLoS.
+Then, the total LiFi channel gain is Hi,j = H
+i,j
+LoS + H
+i,j
+NLoS.
+Let γ
+i,j
+LiFi denote the signal-to-interference-plus-noise ratio
+(SINR) of the LiFi link between AP i and UE j, given as:
+γ
+i,j
+LiFi =
+(RpdHi,jPmod)
+2
+NLiFiBLiFi +
+P
+u∈S,u6=i
+(RpdHu,jPmod)
+2
+, (2)
+where NLiFi is the noise power spectral density (PSD); BLiFi
+is the LiFi channel bandwidth; Rpd is the detector responsivity; The modulated optical power is Pmod;
+2) WiFi channel model: The WiFi channel model used in
+this paper can be detailed in [27], which is denoted as H
+i,j
+WiFi.
+Since only one WiFi AP is considered in this paper, the cochannel interference can be neglected. Let γ
+i,j
+WiFi denote the
+signal-to-noise ratio (SNR) of the WiFi link between AP i and
+UE j, and it can be expressed as:
+γ
+i,j
+WiFi =
+
+
+
+H
+i,j
+WiFi
+
+
+
+2
+PWiFi
+NWiFiBWiFi
+, (3)
+where PWiFi is the transmit power of the WiFi AP; NWiFi
+is the noise PSD of WiFi; BWiFi denotes the WiFi channel
+bandwidth.
+C. Resource Allocation Problem Formulation
+Let Ci,j denote the corresponding link capacity between AP
+i and UE j, and can be expressed as follows [10, eq. (1)]:
+Ci,j =
+
+
+
+BLiFi
+2
+log2
+
+1 +
+e
+2π
+γ
+i,j
+LiFi
+, ∀i ∈ SLiFi
+BWiFilog2
+(1 + γ
+i,j
+WiFi), ∀i ∈ SWiFi
+, (4)
+where e is the Euler’s number; BWiFi denotes the WiFi
+channel bandwidth; SLiFi is the set of LiFi APs; SWiFi is the
+set of WiFi APs. In addition, each UE has a certain data rate
+requirement, denoted by Rj , following a Gamma distribution
+with a unity shape parameter. The proportion of time resource
+that AP i allocates to UE j can be denoted as ρi,j ∈ [0, 1].
+Then, the network sum-rate throughput can be given as:
+Γ = X
+j∈U
+minnX
+i∈Sj
+ρi,jCi,j , Rj
+o
+, (5)
+where Sj denotes the set of APs serving UE j. With the
+MPTCP, the connected APs are determined by the signal
+strength strategy (SSS), which is a heuristic method that
+chooses the AP(s) providing the strongest signal power.
+The traditional TCP-based resource allocation problems
+assume only one subflow is provided by each AP, and always shift the data flow from one crowded AP to another
+with lower channel capacity but higher resource availability.
+With MPTCP, resource allocation is achieved by allocating
+the resource among multiple subflows without affecting link
+connectivity. In this paper, our objective is to optimise the time
+resource using the max-sum-log-rate objective function under
+a few constraints [6]. In this context, the resource allocation
+problem can be formulated as follows:
+max
+ρi,j
+P
+j∈U
+log
+minn P
+i∈Sj
+ρi,jCi,j , Rj
+o
+s.t.
+P
+j∈Ui
+ρi,j ≤ 1 ∀i ∈ S;
+ρi,j = 0 ∀i ∈ S, j 6∈ Ui
+;
+ρi,j ∈ [0, 1] ∀i ∈ S, j ∈ Ui
+.
+(6)
+Here, Ui denotes the set of UEs that AP i serves. The first
+constraint means that the allocated resource for each AP is no
+more than the total amount.
+The above problem formulation is a nonlinear programming
+problem, making it hard to derive a mathematical closedform solution. Alternatively, it can be solved using the OPTI
+toolbox [28] with a cost of iterations. In [21], two methods are
+proposed to tackle the resource allocation problems in HetNet:
+the optimisation-based method and heuristic method. In the
+optimisation-based method, an iterative algorithm is proposed
+to solve the joint optimisation problem, providing optimal
+performance but with higher computational complexity. As for
+the heuristic method, the resource of AP i is equally allocated
+within the connected UEs, given as ρi,j = 1/NUi
+, where NUi
+denote the number of UEs served by AP i. Hence, the heuristic
+method has the lowest complexity but less optimality regarding
+the network sum-rate performance.
+III. PROPOSED GAT-BASED MODEL FOR RESOURCE
+ALLOCATION IN HETNET
+The network topology nature of HetNet makes it suitable
+to be considered as a graph. Classic GNN models include
+graph convolutional network (GCN) [29], GraphSAGE [30],
+and graph attention network (GAT) [31]. Recently, several
+works have investigated the LB problem for wireless networks
+using GCN [13], [14], [25] and GraphSAGE [16]. However,
+all the above works consider the same importance for the
+neighborhood nodes during the aggregation process. As a
+result, assigning the same importance to different nodes having
+contrasting resource availability would sacrifice the network’s
+average performance in our scenario. Alternatively, the GAT
+model allows for assigning different importance to nodes
+within the same neighborhood, improving the generalizability
+of the GNN model, e.g. see the resource allocation in [32].
+Driven by this, we propose a GAT-based model for the LB
+problem in MPTCP-enabled HetNet. In addition, an investigation of the impact of different GNN models on the network’s
+throughput is provided, see the following Section IV-B.
+In this section, the architecture overview of the proposed
+GAT-based model is first introduced, followed by the graph
+construction. Next, the GAT-based aggregation process is detailed. Finally, the mixed training and the training performance
+are given.
+A. Architecture Overview
+The overall architecture overview of the proposed GATbased model is illustrated in Fig. 2. Specifically, the proposed
+model includes the following three components:
+5
+@/?>,'514?A !>%,$9%4=&1'B8:- B14?A'1&?1&-&/,4,$"/
+%&$$
+%&$%
+%&$& =*
+=+
+=,
+=*
+-
+#@'/&56(.?)!//(>/&$>
+!3.'%"--
+=6'+,>(7+>0 93+').%+',>(7+>0
+=6'+,
+?+(%$3+0
+$%
+&'
+Q
+!"#" !"#" !"#" Q $"#"
+$%
+&'
+Q
+!"#" !"#" !"#" Q $"#"
+!""#$"%&$
+@#'(%+',
+"6'+,?+(%$3+0
+Q
+(''(
+Q
+('(
+:*
+./ :0
+./ :1"
+./
+:*
+./ :0
+./ :1"
+./
+@#'(%+
+Fig. 2. The architecture of the proposed GAT model for resource allocation in MPTCP-enabled HetNet.
+• Input graph: The HetNet environment is modeled as a
+graph, where each UE and AP are represented as nodes,
+and the UE-AP links are depicted as edges. The input
+graph includes two key data types: node features and
+node labels. The node features are embedded vectors that
+encapsulate crucial channel and UE state information,
+while the node labels represent the resource allocation
+results. The input graph provides node features to the
+GNN model for training and produces node labels for
+supervised learning.
+• Multi-layer GATs: The adopted GNN model is a multilayer GAT model. A single-layer GAT extracts the mapping relationship by aggregating node features from the
+input graph using a multi-head attention mechanism. This
+operation is repeated across multiple layers, ultimately
+updating the input graph with new node features.
+• Graph representation: After the message passing in
+the GAT model, the graph is transformed into a new
+representation with updated node features. In the final
+step, these updated node features and node labels are used
+for supervised training. During this process, backpropagation updates the network parameters in the GAT model,
+ultimately leading to convergence.
+B. Graph Construction
+To construct an input graph for HetNet, we treat each AP
+and UE as a node, and each AP connection as an edge. The
+constructed directed graph is denoted as G := (V, E), where
+V := {v
+UE
+1
+, vUE
+2
+, ..., vUE
+Nu
+, vWiFi
+Nu+1, vLiFi
+Nu+2, ..., vLiFi
+N } is the sets
+of vertices (i.e. nodes) and E := {ei,j|vi ∈ Sj , vj ∈ U} ∈
+R
+Nu×Nf denote the sets of edges. Here, N is the total number
+of nodes, given by Na + Nu. Let h = {
+~h1,
+~h2, ...,
+~hN },
+~hv ∈
+R
+F denote the node feature of node v with a dimension
+of F. As depicted in the left of Fig. 2, the channel state
+information γi,j can be represented in either edge or node.
+Besides, each UE node has an additional feature of Rj that
+affects the resource allocation results, while AP nodes do not.
+Accordingly, the node-wise graph is considered to carry the
+required features. Then, ~hv can be expressed as follows:
+~hv =
+(
+0, ∀v ∈ S;
+
+γ1,v, γ2,v, ..., γNf ,v, Rv
+
+, ∀v ∈ U,
+(7)
+where the vector [γ1,v, γ2,v, ..., γNf ,v] is the channel state
+information (i.e. SINR) set of connected AP links for node
+v. As for the LiFi APs, node features are zeros vectors
+with the same dimension of F as they can be treated as
+empty nodes. Considering the ground-truth labels of allocated
+resource ρi,j , the represented node embedding matrix can be
+denoted as ρ¯ = {ρ¯1, ρ¯2, ..., ρ¯N }, ρ¯v ∈ R
+F −1
+. For the node v,
+the corresponding node label vector can be expressed as:
+ρ¯v =
+(
+0, ∀v ∈ S;
+
+ρ1,v, ρ2,v, ..., ρNf ,v
+, ∀v ∈ U,
+(8)
+where the vector [ρ1,v, ρ2,v, ..., ρNf ,v] is the obtained groundtruth labels for ∀v ∈ U. Based on (8), the nodes label matrix
+for UE is expressed ρ¯UE = {ρ¯1, ρ¯2, ..., ρ¯Nu }.
+C. GAT-based Aggregation
+1) Graph attentional layer: Different from other GNN
+models like GCN [29], and GraphSAGE [30], GAT introduces
+the self-attention mechanism in the transformer [33] and attaches different importance coefficients for each node attribute
+within its neighborhood expressed as Ni
+. A GAT layer is first
+applied using a shared linear transformation, parameterized
+by a weight matrix W ∈ R
+F
+′×F , for transforming input node
+features to a different dimensional feature of F
+′
+. The selfattention is applied on each node by using a shared attention
+mechanism a: R
+F
+′
+×R
+F → R. Then, the attention coefficients
+can be computed as follows [31]:
+ei,j = a(W~hi
+,W~hj ). (9)
+6
+To have a common scaling across all neighborhoods, attention coefficients are normalised using the softmax and the
+LeakyReLU nonlinear functions, given as [31]:
+αi,j = softmax(ei,j ) = exp (LeakyReLU(ei,j ))
+P
+k∈Ni
+exp (LeakyReLU(ei,k)),
+(10)
+where αi,j is normalised attention coefficients. To this end,
+the node representation of ~hi
+is computed as follows:
+~h
+′
+i = σ
+
+
+X
+j∈Ni
+αi,jW~hi
+
+ , (11)
+where σ is a nonlinear transformation function.
+2) Multi-layer GATs: As introduced in [33], multi-head
+attention can enhance the stability of the training process
+of GAT compared to the single-head attention mechanism.
+Hence, the multi-head attention with K heads is considered
+for GAT, as illustrated in Fig. 2 with an example of K = 3.
+With multi-head attention, K single-head attentions are executed independently in parallel and then aggregated in output
+using concatenation or averaging operation. The corresponding
+process can be expressed as follows [31]:
+~h
+′
+i = σ
+
+
+1
+K
+X
+K
+k=1
+X
+j∈Ni
+α
+k
+i,jWk~hi
+
+ , (12)
+where α
+k
+i,j denote the normalised attention coefficients at the
+K-th head; Wk
+is the weight matrix of the corresponding
+input linear transformation. Note the averaging operation is
+exemplified in (12). Given the layer number of GAT as L, the
+message passing process of GATs can be given as:
+~h
+(l+1)
+i = σ
+
+
+1
+K
+X
+K
+k=1
+X
+j∈Ni
+α
+k
+i,jWk~h
+(l)
+i
+
+ , (13)
+where ~h
+(l)
+i
+is the node features at the l-th GAT layer, and it
+can be computed using (12).
+3) Graph representation: Based on (13), the updated node
+embedding after L-layer GATs can be denoted as ρUE =
+{
+~h
+(L+1)
+1
+,
+~h
+(L+1)
+2
+, ...,
+~h
+(L+1)
+Nu
+}. Therefore, the above resource
+allocation problem can be modeled as a regression problem,
+which can be solved with the mean square error (MSE) loss
+function, expressed as:
+LMSE (θ) = 1
+N
+X
+N
+n=1
+(ρ¯UE − ρUE)
+2
+, (14)
+where θ denotes the set of all the weight matrices and
+bias vectors in the GAT model; N is the total number of
+trained samples. Recalling the message passing in (13), all
+learnable parameters in the proposed GAT can be represented
+as θ
+∆= {A(l)
+, Θ(l)
+}, where A(l) ∈ R
+L×K is the total learnable
+parameters of attention coefficients, Θ(l) ∈ R
+L×F
+′×F is the
+learnable parameters of L-layer feed-forward neural networks
+in GAT.
+Remark 1. The definition of learnable parameters θ indicates
+that the trained model is independent of the number of UEs. In
+other words, the GAT model trained on a specific network size
+(i.e. for a fixed Nu) can adapt to different unseen UE numbers,
+while it may not be suitable for varying subflow numbers due
+to the different edge numbers in nature. This observation aligns
+with the inductive learning advantage of GAT, demonstrating
+the model’s strong scalability and eliminating the need for
+retraining when the network topology changes.
+D. Inductive Learning via Mixed Training
+The proposed GAT-based model is operated in a supervised
+manner, which requires sufficient labeled training samples. To
+proceed with this, the dataset collection method is introduced
+in this part.
+The collected dataset includes N samples for one case of
+network setup, e.g. Na = 17, Nu = 20, Nf = 3. Let
+M = |Na| × |Nu| × |Nf | denote the total cases considered
+in this paper, where |x| denote the total cases of x. Thus
+the required training sample number is MN. Thanks to
+the inductive learning characteristic in GAT, as described in
+Remark 1, the considered sub-dataset numbers can be reduced
+to M′ = |Na| × |Nf |, which is determined by the total
+cases of LiFi APs and subflow numbers. In total, M′
+subdataset are collected for training the corresponding models.
+Considering a specific number of Na and Nf , we aim to
+learn the structured relationship in graphs and predict the
+resource allocation results for unseen graphs. Borrowing the
+optimisation-based method in [21], the problem (6) can be
+solved using the fmincon toolbox in Matlab. Hence, a MonteCarlo simulation is carried out to generate N independent
+samples, in which each sample represents a unique graph G
+with the same node and edge numbers but different topology
+and node features. Mixing collected N graphs for inductive
+learning, the mixed dataset has strong generality for unseen
+data. This method is named as mixed training.
+With the mixed training, the mixed dataset is pre-processed
+with the linear normalisation, separately for two kinds of node
+features (i.e. SINR and data rate requirement). Afterward, an
+80:20 ratio is adopted to separate the mixed dataset for training
+and validation. Next, the Adam optimizer is adopted to train
+the proposed GAT model by iterating θ through θ ← θ −
+η∇LMSE (θ), where η is the learning rate during the training
+process and ∇LMSE(θ) stands for the gradient of the loss
+function with respect to θ.
+E. Training Performance
+In this subsection, two metrics are evaluated for the training
+performance: accuracy and sum rate.
+In Fig. 3(a), the prediction error (i.e. MSE) of the proposed
+GAT-based model drops with the training epoch increases,
+reaching convergence for all cases of Nu and Nf when the
+training epoch number is bigger than 10. Note that the training
+loss and validation loss are very close during the training,
+indicating no over-fitting occurs. Hence, the proposed GATbased model owns high accuracy on predicting the solutions
+of resource allocation. For this reason, only the training
+performance is provided for various combinations of Nu and
+Nf in Fig. 3(b), where the sum rate is calculated based on (5).
+7
+ Number of epochs
+MSE loss
+(a) Training loss and validation loss.
+0 5 10 15 20
+Number of epochs
+200
+400
+600
+800
+1000
+1200
+1400
+1600
+1800
+2000
+Sum rate (Mbps)
+(b) Training sum rate.
+Fig. 3. Training and test performance under different Nu and Nf , where
+Na = 17 (Scale II).
+As shown, the proposed GAT-based model enhances the sum
+rate with the increase of training epoch number. For example
+when Nu = 20, the trained GAT model can level up the sum
+rate from 500 Mbps to 1,560 Mbps (when Nf = 3), and from
+1,000 Mbps to and 1,620 Mbps (when Nf = 4). Noticeably,
+the sum rate is hugely improved when Nu gets bigger, and
+slightly improved when Nf gets bigger. The former reason
+is that the increased UE number imposes higher budgets
+on network throughput, and the latter can be attributed to
+the increased subflows bringing higher flexibility on resource
+allocation when many UEs (Nu = 20) are competing for the
+network resource.
+IV. NUMERICAL RESULTS
+In this section, the numerical results are given from the
+following parts. First, the simulation setup is elaborated by
+introducing the parameters setup and the compared benchmarks. Second, the network performance (sum rate and UE
+fairness) is evaluated by investigating the impact of UE
+number and subflows. Third, the scalability of the GAT-based
+model is verified by extensive simulation results. Finally, a
+comparison between the proposed GAT-based model and the
+other baselines is conducted to analyze the complexity.
+TABLE II
+PARAMETER SETUP
+HetNet Parameters Values
+HetNet Scale I 7.5m×7.5m×3m
+HetNet Scale II 10m×10m×3m
+HetNet Scale III 12.5m×12.5m×3m
+Number of LiFi APs 9, 16, 25
+Number of subflows, Nf 2, 3, 4
+Number of WiFi APs 1
+Number of UEs, Nu {10, 20, 30, 40, 50}
+LiFi AP separation, d0 2.5 m
+Height of WiFi AP, h0 0.5 m
+Average data rate requirement 100 Mbps
+Other LiFi and WiFi parameters Refer to [10]
+Dataset Collection Parameters Values
+Number of training datasets, M′
+9
+Number of samples per dataset, N 5000
+Training Parameters Values
+Number of GAT layers, L 2
+Number of hidden neurons 32
+Number of heads in GAT layers 3, 8
+Dropout probability 0.5
+Loss function MSE
+Learning rate, η 0.001
+Batch size 100
+Decaying factor, γ 0.95
+Optimiser Adam
+A. Simulation Setup
+1) Software Setup: In this paper, Monte Carlo simulations
+are carried out to evaluate the performance of the proposed
+GAT-based model. To facilitate the training process, the dataset
+collection is implemented in MATLAB R2021b, whereas the
+model training and performance evaluation are programmed
+in Python 3.8.18 with Pytorch 1.13.1, on a computer with
+an Apple M1 Pro processor and 16 GB memory. Finally, the
+proposed GAT-based model is built on the PyTorch Geometric
+2.5.3. The relevant codes are open-sourced in GitHub3
+.
+2) Parameters Setup: Table II lists the parameters setup
+taken in this paper. As presented, three network scales are
+considered, including Scale I (Na = 10), Scale II (Na = 17)
+and Scale III (Na = 26), where the room sizes are set
+as 7.5m×7.5m×3m, 10m×10m×3m, and 12.5m×12.5m×3m,
+respectively. The number of subflows is considered as
+Nf = 2, 3, 4. In addition, the UE number is set as Nu ∈
+{10, 20, 30, 40, 50}, randomly distributed in the room with the
+average data rate requirement (under Gamma distribution) of
+100 Mbps. As for the dataset collection, 5,000 samples are
+mixed as a sub-dataset for training. In the proposed GAT-based
+model, the number of GAT layers is 2, and the neurons number
+3https://github.com/HanJi-UCD/GNN-HetNet.
+8
+of hidden layer is 32. In the multi-head attention mechanism
+in each GAT layer, the head number is adjusted based on node
+numbers. Accordingly, 3 heads are adopted for Nu = 10, 20,
+and 8 heads for Nu = 30, 40, 50. The dropout probability is
+fixed as 0.5 for all layers to avoid over-fitting. The learning rate
+η is initialised as 0.001 with a decaying factor γ of 0.95 for
+every epoch. For a fair comparison, the compared benchmarks
+(see below) share the same simulation parameters. For the
+compared learning methods, the hidden layer number is set
+as 4 in the DNN model, and 2-4-1 for the target, condition,
+combiner in the TCNN model. The other training parameters
+are the same as Table II. Finally, other basic parameters are
+detailed in [10].
+3) Compared Baselines: To provide a comprehensive comparison, several methods are considered as baselines in this
+paper:
+• Heuristic method: In this baseline method, each AP
+allocates equal resources among serving UEs. Hence,
+this rule-based method has the lowest complexity but the
+worst optimality due to this simple resource allocation
+scheme.
+• Optimisation method [21]: In this baseline method, a
+distributed optimisation algorithm is utilized to optimize
+the overall network throughput. Such an optimisationbased method maintains the highest complexity but an
+optimal performance, regarded as the upper-bound benchmark.
+• DNN: In this baseline method, DNN is a network-centric
+learning model, in which a simple fully connected DNN
+structure is adopted to predict the resource allocation
+for entire UEs with one implementation. Unlike the
+above traditional methods, the learning-aided method is
+capable of solving non-convex problems with much lower
+complexity.
+• TCNN [17]: In this baseline method, target-condition
+neural network (TCNN) is a user-centric learning model,
+in which TCNN is designed to facilitate the resource allocation results for single target UE rather than entire UEs.
+By doing so, the prediction accuracy can be improved.
+B. Impact of GNN Models
+In this subsection, the impact of selecting different representative GNN models including the adopted GAT [31],
+GCN [29], and GraphSAGE [30] is investigated to verify the
+effectiveness of the proposed GAT-based model.
+Fig. 4 shows a sum rate comparison for various GNN
+models against the optimal optimisation method, where the
+case of Na = 17 and Nf = 4 is exemplified. In total, the
+sum rate of GNN models increases with the increase of UE
+number, which is as expected. However, the proposed GATbased model presents a notable performance improvement
+compared with GCN and GraphSAGE models. Specifically,
+the GAT model outperforms the GCN with a performance gain
+of up to 16.4% for 50 UEs. Also for a smaller UE number,
+the GAT has a larger sum rate than the GCN model. Although
+the performance of the GraphSAGE model approaches that of
+the GAT model when Nu ≤ 30, its performance gets worse
+10 20 30 40 50
+UE number
+800
+1000
+1200
+1400
+1600
+1800
+2000
+2200
+2400
+Sum rate (Mbps)
+Optimisation
+GAT
+GCN
+GraphSAGE
+Fig. 4. Comparison of sum rate performance under different GNN models,
+where Na = 17 (Scale II), Nf = 4.
+when Nu turns bigger, causing the biggest performance gap of
+14.9% when Nu = 40. The reason is that the proposed GATbased model introduces the multi-head attention mechanism
+to enrich the model’s learning process, while the conventional
+GCN does not. Besides, the GraphSAGE model optimises
+the aggregation algorithm on top of the GCN model, which
+explains the observation that the GraphSAGE model is better
+than GCN for a few small UE numbers as showed in Fig. 4.
+Therefore, the proposed GAT-based model is more suitable to
+tackle the MPTCP-enabled LB problem in this paper.
+C. Impact of UE Number
+This subsection investigates the impact of different UE
+numbers on network performance between the proposed GAT
+model and the benchmarks mentioned above. Two network
+metrics are evaluated: sum rate that is measured using (5) and
+UE fairness that is measured using Jain’s fairness [10, eq. (3)].
+The Jain’s fairness ranging between [0, 1] measures whether
+the network resource is allocated fairly among its serving UEs.
+Fig. 5 presents the sum rate performance versus the impact
+of UE number, where the network scale and subflows number
+are fixed as Na = 17 and Nf = 3. As illustrated, the
+network sum rate increases as expected when with UE number
+turns bigger. Specifically, the optimisation method provides an
+upper-bound performance from 1,000 Gbps when Nu = 10 to
+2,300 Mbps when Nu = 50, because this method is nearoptimal. In addition, the proposed GAT-based model has the
+second-best performance, performing better than the heuristic
+method and other learning-aided methods. It is worth noting
+that there is a marginal performance gap between optimisation
+and our method. Noticeably, this gap first increases from 6%
+(Nu = 10) to a maximum value of 11.5% (Nu = 20), and then
+drops to the minimum gap value 0% (Nu = 50). The increment of performance gap can be attributed to the increased UE
+number bringing higher graph complexity, thus degrading the
+9
+10 20 30 40 50
+UE number
+600
+800
+1000
+1200
+1400
+1600
+1800
+2000
+2200
+2400
+Sum rate (Mbps)
+Optimisation
+Heuristic
+Network-centric DNN
+User-centric TCNN
+Proposed GNN
+Fig. 5. Sum rate comparison versus UE number, where Na = 17 (Scale II),
+Nf = 3.
+prediction accuracy. Nonetheless, the increasing UEs saturate
+the system when Nu > 20, further lowering the prediction
+difficulty. As for the traditional learning methods, the proposed
+GAT-based model shows up to 400 Mbps (17.4%) over TCNN
+and 500 Mbps (21.7%) over DNN models, demonstrating the
+superiority of graph learning manner. Finally, the user-centric
+TCNN model is superior to the network-centric DNN model,
+which is owing to the design of the target-condition concept.
+Fig. 6 depicts Jain’s fairness performance versus different
+UE numbers. In general, we can observe that Jain’s fairness
+reduces with the increase of UE number, which is also as
+expected as this metric is negatively correlated to the sum
+rate. It is noted that the heuristic method presents the highest
+fairness over other benchmarks because of the equal allocation of resources. Among other benchmarks, the optimisation
+method also remains the highest fairness for most cases except
+when Nu = 50, followed by the proposed GNN model. This
+indicates that the proposed GNN method does not sacrifice
+the UE fairness to make up the network sum rate. Finally, a
+similar trend is also found in which the user-centric TCNN
+brings higher fairness than the network-centric DNN model,
+which has the lowest Jain’s fairness.
+D. Impact of Subflows
+This subsection investigates the impact of subflow numbers
+by fixing the UE number and network scale. For simplicity,
+Jain’s fairness is not considered for the following analysis.
+As illustrated in Fig. 7, the impact of subflow numbers
+is studied for three UE numbers (Nu = 10, 30, 50), where
+Nf = 2, 3, 4. Observing the Fig. 7(a) to Fig. 7(c), the
+sum rate is increased with Nu, which is in line with the
+observation in Fig. 5. In Fig. 7(a), the sum rate performance
+is marginally enhanced with the subflow number, because
+more subflows can offer more flexibility in load balancing.
+Specifically, the proposed GNN model can improve the sum
+10 20 30 40 50
+UE number
+0
+0.2
+0.4
+0.6
+0.8
+1
+1.2
+Jain fairness
+Optimisation
+Heuristic
+Network-centric DNN
+User-centric TCNN
+Proposed GNN
+Fig. 6. Jain’s fairness comparison versus UE number, where Na = 17 (Scale
+II), Nf = 3.
+rate from 860 Mbps when Nf = 2 to 940 Mbps when Nf = 4,
+a 9.3% performance improvement, which is comparable to
+other benchmarks. In Fig. 7(b), the optimisation and GNN
+methods present a similar trend as Fig. 7(a) while other
+three benchmarks show an opposite trend, in which the sum
+rate is slightly decreased with subflow number (around 3%
+performance drop from 2 subflows to 4 subflows). Furthermore
+in Fig. 7(c), this performance drop enlarges to 12.5% for
+heuristic, DNN, and TCNN methods, while the proposed GNN
+model provides a 2.7% sum rate improvement. The reason
+lies in the fact that the more UEs are involved in HetNet,
+the fewer resources are available to be provided. As a result,
+in such a competitive network, allocating resources among
+more subflows causes degraded sum rate performance because
+the channel quality of the additional fourth subflow is always
+worse than the best three subflows when Nf = 4. The above
+observation indicates that when the HetNet is not saturated,
+allocating resources using more subflows is beneficial, while
+it is not desired when the network is saturated.
+E. Analysis of Compatibility
+1) Compatibility to Different UE Numbers: To analyse the
+compatibility of the trained GAT model on other unseen UE
+numbers, a comparison of the proposed GNN model is carried
+out in Fig. 8, where Nf = 3 and Scale II is considered for
+simplicity. Note that the GNN model in Fig. 8 is trained on
+a specific UE number of Nu, while the GNN@Nu = 20/30
+means that the model is trained using sub-dataset of Nu =
+20 or 30. As observed, the proposed GNN@Nu = 20 and
+GNN@Nu = 30 have a close sum rate performance as the
+GNN model, which is trained separately for each UE number.
+For example, the proposed GNN@Nu = 20 has the same
+sum rate as the GNN method when Nu = 20, as they are
+identical. While for unseen UE numbers (i.e. 10, 30, 40, 50
+for GNN@Nu = 20), the sum rate of GNN@Nu = 20 is
+10
+2 3 4
+Subflow number
+0
+500
+1000
+1500
+2000
+2500
+3000
+Sum rate (Mbps)
+Optimisation
+Heuristic
+Network-centric DNN
+User-centric TCNN
+Proposed GNN
+(a) Nu = 10.
+2 3 4
+Subflow number
+0
+500
+1000
+1500
+2000
+2500
+3000
+Sum rate (Mbps)
+Optimisation
+Heuristic
+Network-centric DNN
+User-centric TCNN
+Proposed GNN
+(b) Nu = 30.
+2 3 4
+Subflow number
+0
+500
+1000
+1500
+2000
+2500
+3000
+Sum rate (Mbps)
+Optimisation
+Heuristic
+Network-centric DNN
+User-centric TCNN
+Proposed GNN
+(c) Nu = 50.
+Fig. 7. Sum rate comparison versus subflow numbers, where Na = 17 (Scale II).
+10 20 30 40 50
+UE number
+0
+500
+1000
+1500
+2000
+2500
+Sum rate (Mbps)
+Fig. 8. Sum rate comparison on unseen UE numbers for the proposed GNN
+model, where Na = 17 (Scale II), and Nf = 3.
+comparable to GNN. The same conclusion can be drawn from
+GNN@Nu = 30. It is worth noting that GNN@Nu = 20
+performs better than GNN@Nu = 30 when Nu < 30, while
+GNN@Nu = 30 is better for Nu bigger than 30. This indicates
+that the inductive learning of GNN can slightly enlarge the
+sum rate than simple GNN that is trained for a specific UE
+number.
+2) Compatibility to Different AP Numbers: To analyse the
+compatibility regarding different network scales, another two
+network scales are considered including Scale I: Na = 10,
+and Scale III: Na = 26. Fig. 9 presents the performance
+comparison between the proposed GNN model and other
+benchmarks. As shown, a larger network scale (Na = 26)
+achieves a higher sum rate than a smaller network scale
+(Na = 10) due to more LiFi APs offering more available
+resources. For example, the upper bound of the sum rate in
+Scale III is 2,640 Mbps when Nu = 50, which is 820 Mbps
+(∼ 45%) higher than Scale I. When Na = 10, the proposed
+10 15 20 25 30 35 40 45 50
+UE number
+0
+500
+1000
+1500
+2000
+2500
+3000
+Sum rate (Mbps)
+Fig. 9. Sum rate comparison under various network scales, where Nf = 3.
+GNN model can approach the sum rate of the optimisation
+method, with a performance gap of less than 3.4%, while
+around 18.8% better than other learning-based benchmarks.
+Considering a larger network size of Na = 26, this advantage
+still lives. Specifically, the proposed GAT model boosts the
+sum rate from 900 Mbps when Nu = 10 to 2,590 Mbps when
+Nu = 50, showing a performance drop of 1.9% compared with
+the optimisation benchmark. The above results demonstrate
+the proposed GNN model has excellent applicability and
+compatibility in terms of different network scales.
+F. Analysis of Computational Complexity
+The time complexity is then analyzed to compare the
+proposed GNN model against other benchmarks. Despite the
+dataset collection and model training taking overwhelming
+processing time, the above learning-aided models trained offline have more concerns about inference complexity, rather
+than the training procedure. To this end, we focus on the
+inference complexity for the learning methods. According to
+11
+TABLE III
+ANALYS IS OF BIG-O COMPLEXITY.
+Methods Big-O Complexity
+Optimisation O
+
+(NaNt)
+NuNf
+Na
+
+Heuristic O(NaNu)
+DNN O
+
+LDNNNaNu
+
+TCNN O
+
+LtarNa + LcondNaNu + LcombFo
+
+Proposed GNN O
+
+LK(Nf (Nf + 1)(Nu + Na) + Nf
+2Nu)
+
+[31], the time complexity of the proposed GAT-based model is
+expressed as O
+
+LK((Nu+Na)F F′+(NuNf )F
+′
+)
+
+. Recalling
+(7) and (8), the number of input features and output features
+are Nf + 1 and Nf , respectively. Hence, the time complexity
+of the proposed GAT model is given as O
+
+LK(Nf (Nf +
+1)(Nu + Na) + Nf
+2Nu)
+
+. Note that the computing of the
+multi-head attention mechanism can be parallelized to further
+reduce complexity in practice. As for the heuristic method,
+its complexity is O(NaNu). The optimisation method has the
+highest complexity, given as O
+
+(NaNt)
+NuNf
+Na
+
+[21], where Nt
+denote the number of discretized time resource portions for
+each AP. In addition, the DNN model shows complexity of
+O
+
+LDNNNaNu
+
+4
+, where LDNN is the hidden layer number of
+DNN model. Regarding the TCNN model [17], the complexity
+is the sum of three components: target, condition, combiner,
+expressed as O
+
+LtarNa + LcondNaNu + LcombFo
+
+5
+. Here,
+notations Ltar, Lcond, Lcomb denote the corresponding hidden
+layer numbers of three neural networks in TCNN, and Fo is
+the input size of combiner neural network in TCNN. Finally,
+the complexity comparison is summarised in Table III.
+To quantitatively compare the above complexity, we analyze
+the inference time for the above methods in Table IV. The
+numerical results reveal the following key conclusions: i) With
+the increase of UE number, the learning-aided methods show
+a logarithmic increase in runtime, against the exponential
+increase trend for the optimisation method. This is as expected
+due to the exponential term of NuNf
+Na
+in Table III. ii) When
+the network scale enlarges, the proposed GAT model shows
+good scalability in terms of inference time while the other
+method’s time rises with Na. Specifically, the inference time of
+the GNN model remains at the range of [0.65, 0.85] ms when
+Na = 10 and stays in this range when Na = 26. However,
+the runtime of the optimal method is linearly increased with
+Na. iii) The subflow number in the proposed GNN model has
+a slight impact on the inference time. The possible reason
+is that the parallel computing operation in Pytorch weakens
+the impact of Nf . Finally, taking Nu = 50 as an example,
+4The impact of subflow Nf on DNN model is negligible, as the dominant
+input size in DNN is independent of Nf despite its output size of DNN is
+NuNf .
+5Similar as DNN, the output size of TCNN is Nf , which does not
+contribute to the complexity. Hence the TCNN model is also independent
+of subflow number.
+TABLE IV
+COMPARISON OF INFERENCE TIME (IN MILLISECONDS).
+Methods
+UE number
+10 20 30 40 50
+Scale I
+(Na = 10)
+Optimisation 317.7 860.1 2829 4963 7229
+Heuristic 0.089 0.101 0.109 0.111 0.113
+DNN 0.137 0.145 0.151 0.156 0.167
+TCNN 0.255 0.262 0.267 0.276 0.279
+GNN(Nf = 2) 0.632 0.655 0.741 0.775 0.793
+GNN(Nf = 3) 0.639 0.671 0.747 0.786 0.805
+GNN(Nf = 4) 0.653 0.672 0.778 0.795 0.822
+Scale II
+(Na = 17)
+Optimisation 686 1798 5284 11070 15267
+Heuristic 0.137 0.167 0.181 0.183 0.189
+DNN 0.142 0.163 0.176 0.182 0.187
+TCNN 0.260 0.271 0.282 0.285 0.296
+GNN(Nf = 2) 0.635 0.667 0.749 0.787 0.804
+GNN(Nf = 3) 0.652 0.673 0.755 0.804 0.834
+GNN(Nf = 4) 0.682 0.695 0.783 0.814 0.845
+Scale III
+(Na = 26)
+Optimisation 1467 4037 13874 22347 41714
+Heuristic 0.163 0.219 0.242 0.257 0.267
+DNN 0.146 0.162 0.179 0.193 0.209
+TCNN 0.262 0.274 0.287 0.298 0.319
+GNN(Nf = 2) 0.633 0.657 0.773 0.789 0.798
+GNN(Nf = 3) 0.651 0.663 0.793 0.803 0.855
+GNN(Nf = 4) 0.668 0.689 0.798 0.805 0.856
+the proposed GNN model can reduce the inference time by
+99.989% compared to the optimisation method when Na = 10,
+and 99.998% inference time when Na = 26.
+V. CONCLUSION
+In this paper, we investigated the resource allocation problem in MPTCP-enabled HetNet and proposed a GAT-based
+learning model to solve this non-convex problem. The characteristic of inductive learning of GAT enables the proposed
+learning model to adapt to different UE and AP numbers,
+giving the model excellent compatibility. Unlike other transductive learning models like DNN, the proposed GAT model
+avoids the problem of retraining procedure and renders a good
+generality for the well-trained model. In addition, the proposed
+GAT learning model retains the advantage of low inference
+complexity as other DNN models. Extensive numerical results
+demonstrate that the proposed GAT-based model shows a less
+than 11.5% performance drop compared with the optimal
+method while saving inference time by up to 99.998%. Compared with other DNN-based learning methods, the proposed
+GAT model can enhance the sum rate performance by up to
+21.7% owing to its distinguished graph structure. Therefore,
+the superior performance and ultra-low inference time at the
+sub-millisecond level make the proposed GAT-based model
+promising for practical and real-time implementations in the
+future integrated 6G 
+12
+REFERENCES
+[1] X. You et al., “Towards 6G wireless communication networks: Vision,
+enabling technologies, and new paradigm shifts,” Sci. China Inf. Sci.,
+vol. 64, pp. 1–74, 2021.
+[2] C.-X. Wang et al., “On the road to 6G: Visions, requirements, key
+technologies and testbeds,” IEEE Commun. Surv. Tutor., 2023.
+[3] H. Haas, L. Yin, Y. Wang, and C. Chen, “What is LiFi?” J. Lightw.
+Technol., vol. 34, no. 6, pp. 1533–1544, 2015.
+[4] M. Z. Chowdhury, M. K. Hasan, M. Shahjalal, M. T. Hossan, and Y. M.
+Jang, “Optical wireless hybrid networks: Trends, opportunities, challenges, and research directions,” IEEE Commun. Surv. Tutor., vol. 22,
+no. 2, pp. 930–966, 2020.
+[5] X. Wu, M. D. Soltani, L. Zhou, M. Safari, and H. Haas, “Hybrid LiFi
+and WiFi networks: A survey,” IEEE Commun. Surv. Tutor., vol. 23,
+no. 2, pp. 1398–1420, 2021.
+[6] X. Li, R. Zhang, and L. Hanzo, “Cooperative load balancing in hybrid
+visible light communications and WiFi,” IEEE Trans. Commun., vol. 63,
+no. 4, pp. 1319–1329, 2015.
+[7] Y. Wang, X. Wu, and H. Haas, “Load balancing game with shadowing
+effect for indoor hybrid LiFi/RF networks,” IEEE Trans. Wireless
+Communs, vol. 16, no. 4, pp. 2366–2378, 2017.
+[8] H. Ji and X. Wu, “A novel method of combining decision making and
+optimization for LiFi resource allocation,” in 2022 IEEE Glob. Commun.
+Conf. Workshops (GC Wkshps), 2022, pp. 1616–1621.
+[9] N. A. Amran, M. D. Soltani, M. Yaghoobi, and M. Safari, “Learning
+indoor environment for effective LiFi communications: Signal detection
+and resource allocation,” IEEE Access, vol. 10, pp. 17 400–17 416, 2022.
+[10] H. Ji, X. Wu, Q. Wang, S. J. Redmond, and I. Tavakkolnia, “Adaptive
+target-condition neural network: DNN-aided load balancing for hybrid
+LiFi and WiFi networks,” IEEE Trans. Wirel. Commun., vol. 23, no. 7,
+pp. 7307–7318, 2024.
+[11] S. Shrivastava, B. Chen, C. Chen, H. Wang, and M. Dai, “Deep Qnetwork learning based downlink resource allocation for hybrid RF/VLC
+systems,” IEEE Access, vol. 8, pp. 149 412–149 434, 2020.
+[12] P. Luong, F. Gagnon, L.-N. Tran, and F. Labeau, “Deep reinforcement
+learning-based resource allocation in cooperative UAV-assisted wireless
+networks,” IEEE Trans. Wirel. Commun., vol. 20, no. 11, pp. 7610–7625,
+2021.
+[13] T. Chen, X. Zhang, M. You, G. Zheng, and S. Lambotharan, “A GNNbased supervised learning framework for resource allocation in wireless
+IoT networks,” IEEE Internet Things J., vol. 9, no. 3, pp. 1712–1724,
+2021.
+[14] Y. Shen, Y. Shi, J. Zhang, and K. B. Letaief, “Graph neural networks for
+scalable radio resource management: Architecture design and theoretical
+analysis,” IEEE J. Sel. Areas Commun., vol. 39, no. 1, pp. 101–115,
+2020.
+[15] Z. Gao, M. Eisen, and A. Ribeiro, “Resource allocation via graph neural
+networks in free space optical fronthaul networks,” in 2020 IEEE Glob.
+Commun. Conf. (GLOBECOM), 2020, pp. 1–6.
+[16] M. Ji, Q. Wu, P. Fan, N. Cheng, W. Chen, J. Wang, and K. B. Letaief,
+“Graph neural networks and deep reinforcement learning based resource
+allocation for V2X communications,” arXiv preprint arXiv:2407.06518,
+2024.
+[17] H. Ji, D. T. Delaney, and X. Wu, “User-centric machine learning for
+resource allocation in MPTCP-enabled hybrid LiFi and WiFi networks,”
+in 2024 IEEE 24th Int. Conf. Commun. Technol. (ICCT), accepted for
+publication, 2024.
+[18] T. Zhu, X. Chen, L. Chen, W. Wang, and G. Wei, “GCLR: GNN-based
+cross layer optimization for multipath TCP by routing,” IEEE Access,
+vol. 8, pp. 17 060–17 070, 2020.
+[19] S. R. Pokhrel, M. Panda, and H. L. Vu, “Analytical modeling of
+multipath TCP over last-mile wireless,” IEEE/ACM Trans. Netw., vol. 25,
+no. 3, pp. 1876–1891, 2017.
+[20] X. Wu and H. Haas, “Mobility-aware load balancing for hybrid LiFi and
+WiFi networks,” J. Opt. Commun. Netw., vol. 11, no. 12, pp. 588–597,
+2019.
+[21] X. Wu and D. C. O’Brien, “Parallel transmission LiFi,” IEEE Trans.
+Wirel. Commun., vol. 19, no. 10, pp. 6268–6276, 2020.
+[22] A. A. Purwita, A. Yesilkaya, and H. Haas, “Intelligent subflow steering in MPTCP-based hybrid WiFi and LiFi networks using modelaugmented DRL,” in 2022 IEEE Glob. Commun. Conf. (GLOBECOM),
+2022, pp. 425–430.
+[23] M. Lee, G. Yu, H. Dai, and G. Y. Li, “Graph neural networks meet wireless communications: Motivation, applications, and future directions,”
+IEEE Wirel. Commun., vol. 29, no. 5, pp. 12–19, 2022.
+[24] Y. Shen, J. Zhang, S. Song, and K. B. Letaief, “Graph neural networks
+for wireless communications: From theory to practice,” IEEE Trans.
+Wirel. Commun., vol. 22, no. 5, pp. 3554–3569, 2022.
+[25] M. Eisen and A. Ribeiro, “Optimal wireless resource allocation with
+random edge graph neural networks,” IEEE Trans. Signal Process.,
+vol. 68, pp. 2977–2991, 2020.
+[26] H. Ji, T. Zhang, S. Qiao, and Z. Ghassemlooy, “Joint dimming control
+and optimal power allocation for THO-OFDM visible light communications,” IEEE Trans. Commun., vol. 69, no. 8, pp. 5352–5366, 2021.
+[27] X. Wu, M. Safari, and H. Haas, “Access point selection for hybrid LiFi and Wi-Fi networks,” IEEE Trans. Commun., vol. 65, no. 12, pp.
+5375–5385, 2017.
+[28] P. Belotti, C. Kirches, S. Leyffer, J. Linderoth, J. Luedtke, and A. Mahajan, “Mixed-integer nonlinear optimization,” Acta Numer., vol. 22, pp.
+1–131, 2013.
+[29] T. N. Kipf and M. Welling, “Semi-supervised classification with graph
+convolutional networks,” International Conference on Learning Representations (ICLR), 2017.
+[30] W. Hamilton, Z. Ying, and J. Leskovec, “Inductive representation
+learning on large graphs,” Advances in neural information processing
+systems, vol. 30, 2017.
+[31] P. Veliˇckovi´c, G. Cucurull, A. Casanova, A. Romero, P. Lio, and
+Y. Bengio, “Graph attention networks,” International Conference on
+Learning Representations (ICLR), 2018.
+[32] Y. Shao, R. Li, B. Hu, Y. Wu, Z. Zhao, and H. Zhang, “Graph attention
+network-based multi-agent reinforcement learning for slicing resource
+management in dense cellular network,” IEEE Trans. Veh. Technol.,
+vol. 70, no. 10, pp. 10 792–10 803, 2021.
+[33] A. Vaswani, N. Shazeer, N. Parmar, J. Uszkoreit, L. Jones, A. N. Gomez,
+Ł. Kaiser, and I. Polosukhin, “Attention is all you need,” Advances in
+neural information processing systems, vol. 30, 2017.

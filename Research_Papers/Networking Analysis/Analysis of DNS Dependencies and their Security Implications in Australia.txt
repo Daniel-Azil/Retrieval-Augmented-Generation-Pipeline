@@ -1,0 +1,1204 @@
+1
+Analysis of DNS Dependencies and their Security
+Implications in Australia: A Comparative Study of
+General and Indigenous Populations
+Niousha Nazemi , Member, IEEE, Omid Tavallaie , Anna Maria Mandalari ,
+Hamed Haddadi , Member, IEEE, Ralph Holz , and Albert Y. Zomaya , Fellow, IEEE
+Abstract—This paper investigates the impact of internet centralization on DNS provisioning, particularly its effects on vulnerable populations such as the indigenous people of Australia. We
+analyze the DNS dependencies of Australian government domains
+that serve indigenous communities compared to those serving
+the general population. Our study categorizes DNS providers
+into leading (hyperscaler, US-headquartered companies), nonleading (smaller Australian-headquartered or non-Australian
+companies), and Australian government-hosted providers. Then,
+we build dependency graphs to demonstrate the direct dependency between Australian government domains and their DNS
+providers and the indirect dependency involving further layers
+of providers. Additionally, we conduct an IP location analysis of
+DNS providers to map out the geographical distribution of DNS
+servers, revealing the extent of centralization on DNS services
+within or outside of Australia. Finally, we introduce an attacker
+model to categorize potential cyber attackers based on their
+intentions and resources. By considering attacker models and
+DNS dependency results, we discuss the security vulnerability of
+each population group against any group of attackers and analyze
+whether the current setup of the DNS services of Australian
+government services contributes to a digital divide.
+Index Terms—DNS dependency, Internet centralization, IP
+Geolocation, Indigenous Australians.
+I. INTRODUCTION
+T
+HE concept of Internet centralization [1] refers to consolidating control over the Internet’s infrastructure and
+services. The Domain Name System (DNS) is a core Internet
+service. In the context of the DNS, centralization refers to
+the control that is held by a limited number of dominant
+companies [2] such as Amazon Web Services (AWS) Route 53
+[3], Microsoft Azure [4], Cloudflare DNS [5], Google Cloud
+DNS [6], and Akamai Edge DNS [7]. This centralization leads
+to secondary effects on Internet services and infrastructure,
+such as the availability of the daily services used by a large
+population of Internet users [8].
+In this regard, the significance of authoritative name servers
+becomes apparent in the context of service dependencies. The
+latter term refers to a situation where a service’s functionality
+or effectiveness relies on another’s correct functioning. Hence,
+the efficiency and accuracy of the DNS resolution process
+are highly dependent on the performance and security of the
+authoritative name servers. A single point of failure is a major
+risk in such a system. For example, if an authoritative name
+server in a centralized setting fails, it can disrupt access to
+many websites and online services despite redundancies. This
+aboriginalaffairs.nsw.gov.au.
+FQDN
+ccTLD
+gTLD
+2nd Level
+Domain
+3rd Level
+Domain
+Root
+Fig. 1: FQDN.
+Client
+aboriginalaffairs.nsw.gov.au
+1
+4
+8 5
+2
+3
+6
+Root Server
+TLD Server
+Authoritative Nameserver
+119.148.70.243 Local DNS Resolver
+7
+Fig. 2: DNS resolution process.
+is not impossible, and scenarios with cascading failures due to
+centralization have been observed in the recent past [9], [10].
+In this paper, we ask how failures due to DNS centralization
+can impact different population groups. We choose the Australian setting as our focus area for two reasons: first, Australia
+has a sizable vulnerable population, namely the indigenous
+community. Second, Australia has a highly developed digital
+infrastructure, and many government services are available
+online. We analyze the DNS dependencies of Australian government domains that serve Indigenous communities compared
+to those serving the general population. Our study makes three
+main contributions:
+• Digital Divide: We examine whether there is a difference in
+the DNS service providers used for indigenous and general
+population domains. Our purpose is to understand whether
+such variations contribute to a possible digital divide between the general population and indigenous peoples.
+• Geographical Dependencies: We analyze the geographical
+distribution of DNS servers linked to Australian governmental domains. We focus particularly on servers operated by
+hyperscaler companies and aim to determine these servers’
+physical locations, distinguishing those within Australia
+from those abroad.
+• Security Problems: By considering the DNS dependency
+results and the provider IP networks, we discuss the vulnerability of each domain group to different types of attacker
+models. We categorize potential attackers into representative
+groups of varying strengths and analyze their potential
+impact on different domain groups.
+Our methodology consists of four main phases: Australian
+government service identification, data collection, retrieving
+authoritative name servers, and constructing DNS dependency
+graphs. We categorize DNS providers into leading (hyperarXiv:2408.12958v1 [cs.NI] 23 Aug 2024
+2
+scaler, US-headquartered companies), non-leading (smaller
+Australian-headquartered or non-Australian companies), and
+Australian government-hosted providers. This paper is an
+extended version of our previous work [11] presented at the
+Workshop on Transparency, Accountability, and User Control
+for a Responsible Internet (TAURIN) in 2023 [12], where
+focused exclusively on the digital divide, we now broaden our
+scope significantly to include security analyses and analysis
+of geographic dependencies.
+The paper is structured as follows: We begin with background information on DNS and related concepts, followed by
+a review of related work. We then detail our methodology and
+present our results, focusing on direct dependency analysis,
+indirect dependency analysis, and geographic analysis. The
+discussion section interprets these results in the context of
+the digital divide, geographical dependencies, and security
+implications, including an analysis of attacker models. We
+conclude with a summary of our findings and their significance
+for DNS provisioning in Australia.
+II. BACKGROUND
+We provide background for our study of DNS dependencies
+and their impact on Australian government domains, particularly those serving indigenous communities.
+A. DNS and Its Hierarchy
+DNS [13], [14] is a fundamental Internet component responsible (among other things) for translating human-readable
+domain names into machine-readable IP addresses. Dependencies expressed in the DNS are critical for the availability
+of Internet services. The DNS hierarchy begins with root
+servers [15], followed by Top-Level Domains (TLDs), which
+include generic TLDs (gTLDs) like .com and country-code
+TLDs (ccTLDs) such as .au for Australia. Below these are
+second-level domains. The various parts of a Fully Qualified
+Domain Name (FQDN) are given as the concatenation of socalled labels at the various levels of this hierarchy. Fig. 1
+shows an example. The DNS resolution process, illustrated
+in Fig. 2, involves multiple steps. In the simplest case, and
+without caching, this includes: 1) A recursive DNS server
+initiates the query. 2) It queries a root server, which then
+directs it to the corresponding TLD server. 3) The TLD server
+directs the query to the authoritative name server (NS) for the
+specific queried domain. 4) The authoritative server retrieves
+the IP address, which is subsequently sent back to the recursive
+server. User interaction happens via a stub DNS resolver that
+directs its queries to the recursive server, which is usually
+provided by an ISP or operated as a public service (e.g., the
+public resolver of Google).
+B. DNS Dependencies
+Service dependencies [16], [17] can be categorized into
+direct and indirect forms as follows. Direct dependencies
+occur when a service (e.g., a website) explicitly relies on other
+services provided by a third-party company. For the DNS, an
+example would be website X designating company Y as its
+gleneira.vic.gov.au
+a4-65.akam.net. a8-67.akam.net. a1-84.akam.net.
+dns1.optus.net.au. dns0.optus.net.au.
+Akamai Technologies
+OptusTelecommunications
+a11-67.akam.net. a5-67.akam.net. a6-67.akam.net. a18-67.akam.net. a1-67.akam.net. a28-67.akam.net. a13-67.akam.net.
+a22-67.akam.net. a12-67.akam.net. a4-67.akam.net. a3-67.akam.net. a7-67.akam.net. a9-67.akam.net.
+a14-67.akam.net. a3-64.akam.net. a5-66.akam.net.
+Fig. 3: DNS Dependencies: lines represent name servers.
+DNS provider, which results in Y operating the authoritative
+name servers for X’s domain. Indirect dependencies arise
+from a chain (or multiple chains) of direct dependencies. If
+site X uses provider Y , which in turn depends on company Z,
+then X indirectly depends on Z. As it is possible to have authoritative name servers with multiple companies, many such
+chains can exist. Consequently, a service may be unknowingly
+exposed to vulnerabilities in these chains. Fig. 3 illustrates
+these dependencies using the example of gleneira.vic.gov.au.
+Despite not directly using Akamai’s services, this domain
+could be affected by Akamai outages due to its indirect
+dependency through Optus [18].
+C. Digital Divide and Indigenous Australians
+The term digital divide refers to the gap between individuals or groups who have access to and can effectively
+use digital services and those who lack such access [19]. It
+affects economically disadvantaged and marginalized groups,
+including the indigenous people of Australia [20]. Indigenous
+Australians, comprising Aboriginal peoples and Torres Strait
+Islander peoples [21], often face challenges in accessing
+quality Internet services due to their remote locations [22].
+While this client-side problem is well known, the geographical
+isolation can be exacerbated by inadequate DNS infrastructure
+on the service side. This may potentially lead to a different
+form of digital divide, which has so far received very little
+attention. By examining the DNS infrastructure serving the
+indigenous communities, we can identify potential disparities
+in service quality, reliability, and security that may arise from
+different dependency patterns or geographical distributions
+of DNS servers. We note that the indigenous people of
+Australia are also referred to as Indigenous Australians or
+the First Nations people [21]. In this paper, we use the term
+indigenous, which is also used by the United Nations [23].
+III. RELATED WORK
+Many studies have explored the digital divide such as [22],
+[24], [25]. Wang et al. [24] examined the digital divide in
+the context of energy poverty, revealing its negative effects on
+Internet utility. In Australia, the digital divide has emerged due
+to the significant remoteness and isolation of indigenous communities, which reduces the quality of Internet connectivity
+and limits their access to digital services [22], [25].
+The phenomenon of centralization on the Internet and the
+concentration of infrastructure in the hands of a few dominant
+service providers have been the subject of investigation in
+previous studies. Zemburki et al. in [26] analyzed market share
+3
+and top DNS providers. The authors used active measurement
+to examine this trend across different TLDs and geographical
+locations by using datasets obtained from the OpenINTEL
+[27] project. Their results revealed a growing concentration
+of Internet infrastructure over time. In [28], Zembruzki et al.
+conducted an analysis of DNS consolidation by evaluating authoritative name server configurations across multiple ccTLDs
+and gTLDs which utilized five years from the OpenINTEL
+project. According to their findings, the top 5 DNS providers
+handle 20% of all analyzed domain names, while the top
+100 providers manage 80% of domains with resolvable IPv4
+addresses. The authors of [29] analyzed the DNS traffic from
+the B-Root DNS root server and two ccTLDs, namely New
+Zealand’s .nz and the Netherlands’ .nl. They measured the
+level of centralization resulting from the dominant cloud
+providers, including Amazon, Google, Microsoft, Cloudflare,
+and Facebook. Their study revealed that over one-third of
+queries made to both ccTLDs are the IP addresses of these
+providers.
+The authors of [16], [29] also studied the concept of
+dependencies and their impact on the Internet ecosystem. In
+[16], the authors analyzed direct dependencies by focusing
+on the Mirai Dyn attack and its impact on the top 100k
+Alexa websites [30] that relied on the Dyn DNS server as
+their DNS provider. Their findings revealed that about 90%
+of the top 100K websites listed by Alexa depend on third
+parties. Among these websites, 50% to 70% are prone to
+service outages if prominent DNS providers (Cloudflare, AWS
+DNS, and DNSMadeEasy) fail. In [31], [32], and [33], the
+authors developed a graph-based model to investigate the
+phenomenon of dependencies within the DNS context. Their
+findings demonstrated that over 50% of domain name resolution processes rely on third-party authoritative name servers.
+Xu et al. in [34] developed a graph model to illustrate the
+dependency relationship between domains and servers in the
+name resolution process. Additionally, they introduced a tool
+to determine the smallest set of name servers whose failure
+could disrupt resolution for each domain. Our study follows
+a similar approach, but due to the much smaller sample size,
+we do not build a dedicated graph model.
+Furthermore, studies such as [35] and [36] have investigated
+the impact of third-party dependencies on services including
+DNS, CDNs (Content Delivery Networks), and CAs (Certificate Authority). Kashaf et al. in [35] focused on Africancentric websites. They used a combination of web crawling, data analysis, and visualization techniques. Their results
+indicated that African websites are significantly affected by
+third-party dependencies, with a significant concentration in
+reliance on third-party service providers. The authors of [36]
+investigated website dependencies more precisely. Similar to
+[17], this work developed the concept of a chain of dependencies called TPTs (Third Party Trees) to reveal the
+hierarchical dependencies between each website and its thirdparty service providers. Moura et al., in their study [37],
+identified a vulnerability called TsuNAME in the DNS system.
+This vulnerability leads to loops in the resolution process and
+creates cyclic dependencies that generate a high frequency
+of queries. The authors demonstrated how such query flooding significantly increases traffic forwarding to authoritative
+servers—this escalation in traffic results in potential denial
+of service to DNS services. By studying real-world events
+within New Zealand’s .nz ccTLD, the authors found that the
+misconfiguration of just two domains leads to a 50% surge in
+overall traffic.
+In contrast to these works, our paper aims to investigate
+the implications of DNS dependencies on indigenous populations in Australia, with a particular focus on the cascading
+effects that arise from relying on DNS hosting providers.
+Our analysis is centered around services delivered to people
+through government websites. To the best of our knowledge,
+this research is the first of its kind to explore the impact of
+DNS dependencies through the lens of services to vulnerable
+indigenous communities in Australia.
+IV. METHODOLOGY
+We present the methodology employed in our paper to
+investigate the impact of DNS dependencies on websites
+serving the indigenous people of Australia. Our methodology
+consists of four main phases: Australian government service
+identification, data Collection, retrieving authoritative name
+servers, and constructing DNS dependency graphs.
+A. Service Category Exploration
+The initial phase involves desk research on online resources
+(such as government web pages, news websites, and blog
+posts) to identify the scope of services the Australian government offers to both general and indigenous populations. Our
+exploration begins with Services Australia [38] portal, a foundational government resource that includes information about
+a considerable range of services accessible to Australians. Despite the information provided by Services Australia and other
+government resources, to the best of our knowledge, there
+is no single, comprehensive, and categorized list of services
+that could be directly utilized for our research. Therefore, we
+conducted desk research to identify the broad categories of
+government services relevant to our study. This preliminary
+exploration lays the groundwork for the subsequent data collection phase. We identified 16 main categories of government
+services. These categories and their corresponding keywords
+are presented in Table I. Each category is extracted by initial
+analysis of the web page’s content to identify the most relevant
+and frequently occurring terms and phrases that best describe
+the services within each category. These categories include
+a wide range of essential services. For instance, Australia’s
+healthcare system operates as a complex network involving
+public and private sector organizations that work together to
+provide health services to all Australians [39]. In parallel to
+healthcare, the Australian government offers support services
+for individuals with disabilities, ranging from specialized
+medical care to providing assistive technology and financial
+assistance to enhance the quality of life and ensure inclusion
+in society [40]. These selected categories serve as the primary
+keywords for our data collection process to identify the specific
+government domains that deliver essential services to the
+general and indigenous populations in Australia. By focusing
+4
+TABLE I: Keywords sorted based on the identified 16 categories of government services.
+Healthcare Disability Support Family Support Business Support
+Preventive care Rehabilitation services Child support Business training
+Chronic conditions Assistive technology Residential care Business mentoring
+Specialist care Improve accessibility Childcare Entrepreneurship
+Telehealth services Promote social inclusion Youth support Procurement policies
+Vaccination Community program Adolescent support Provide funding
+Medical services Violence prevention
+Education Housing Community Development Environmental Programs
+Training programs Homelessness support Individual support Land management
+School programs Affordable housing Cultural maintenance Protect sacred sites
+Vocational training Appropriate housing Social connection Traditional lands
+Adult education Home-ownership Natural resources
+Preserve cultural heritage
+Disaster Relief Economic Development Women Support Legal Services
+Emergency services Employment services Women health Legal aid
+Rebuilding homes Job training Accommodation service Resolving disputes
+Infrastructure improvement Job seeking Support groups Justice
+Temporary accommodation Financial assistance Employment opportunities Family law
+Distribution of food Financial stability Domestic violence Criminal law
+Retirement Support Cultural Preservation Mental Health Addiction Support
+Age pension Language program Well-being Substance abuse
+Superannuation savings Traditional arts and crafts Counselling services Treatment service
+on these services and finding the relevant government domains,
+particularly in relation to the indigenous population, we understand how DNS dependencies and geographic distribution of
+servers might affect access to essential government services.
+B. Domain Collection
+In this section, we outline the domain collection process,
+specifically targeting Australian government websites that
+provide a range of services to the general and indigenous
+population. The types of services identified in section IV-A
+serve as the primary keywords for this process. By utilizing
+these principal keywords, we identify the actual government
+services and their corresponding domains. There are no openaccess data sets of Australian domains categorized based on
+the target population group that we could have used directly
+for our study. Hence, we employ a web crawling technique to
+identify them. We follow these steps to collect governmental
+domains for the general and indigenous people of Australia:
+1) Web search: Utilizing Google search, we fetch pertinent
+governmental websites using keywords associated with the
+16 service categories identified in the previous step. These
+keywords, derived from the service category exploration phase,
+serve as search queries to identify government websites offering services in these specific areas. Our search is restricted to
+websites with the .gov.au suffix, guaranteeing the inclusion of
+only authorized Australian government websites.
+2) URL extraction: We identify the first 100 URLs obtained
+from Google search results and add them to the URL dataset.
+3) Keyword extraction: This step involves crawling the URLs
+of the visited web pages and using a word cloud technique to
+extract the top five most common and contextually relevant
+words from each web page. A manual check is then conducted to verify relevancy. These extracted keywords are crosschecked against the existing ones in the set, and those that are
+new and relevant are added to the set for further searches.
+4) Domain extraction: we parse the web page URLs and
+extract the corresponding domains, which are then collected
+and stored in a dedicated data set.
+5) Iteration: We iterate until no additional keywords or domains are identified.
+To create two unique sets of domains for the indigenous and
+general populations, we conduct the process from step 1 to step
+5 in two rounds. In the first round, we include keywords related
+to indigenous terms, such as Aboriginal and Torres Strait
+Islander, to collect domains dedicated to indigenous services.
+In the second round, we exclude these terms to collect domains
+targeting the general public. After capturing these domains, we
+manually validate that they accurately match the respective
+target group. This process ensures the creation of two distinct
+and relevant domain sets. Data collected through this paper
+is accessible via IEEE DataPort [41]. Fig. 4 illustrates the
+flowchart that outlines the steps to identify and categorize
+Australian government domains, focusing on services for the
+general population and indigenous communities.
+C. Retrieval of Authoritative Name Servers
+This section involves obtaining the authoritative name
+servers for the domains we collected. We develop a custom
+script based on command-line tools to obtain the DNS records,
+specifically focusing on NS records that indicate the authoritative DNS servers for each domain. We send queries to all 13
+root servers [42] as of the 22nd of February 2023 [15], [43].
+Once we have obtained the name servers for the domains,
+our next objective in this stage is to establish two chains of
+dependencies—one for indigenous domains and another for
+general domains. This involves querying the name servers to
+acquire subsequent name servers, continuing this process until
+we reach the final authoritative name servers in the chain. This
+approach gives us a high chance of capturing the majority of
+the available NS records. Additionally, we leverage WHOIS
+to collect information about the provider company associated
+with each captured name server. The results obtained from this
+stage are utilized to visualize the DNS dependency graph in
+the next stage.
+5
+Start
+Identify Government Services:
+Conduct desk research on
+Australian webpages to identify
+primary list of government services.
+Any New
+Keywords?
+Any New
+Domains?
+Thenumber of 448 and 54
+domains arestored in DomainsSet
+for general and Indigenous
+population, respectively.
+Stop
+Web Search:
+Search Googleby New Keywords, using .gov.au suffix to identify
+government URLs. Download top 100 results.
+URLsSet
+KeywordsExtraction:
+Extract top 5 most
+prevalent keywords
+using word clouding.
+Domain Extraction:
+Extract domains from URLs. Temporary
+DomainsList
+Domain NamesValidation:
+Check to ensureeach
+domain alignswith the
+correct population group
+in DomainsSet.
+KeywordsVerification:
+Select thecontextual
+relevant keywords.
+KeywordsSet
+Update
+DomainsVerification:
+Check therelevency
+of domains.
+Incorporate
+Indigenous-specific terms
+to New Keywords.
+Identified total of
+16 servicecategories.
+Yes
+Yes
+DomainsSet
+Update
+CategorizeGovernment Services:
+Group related services together to
+form distinct categories.
+Assign identified 16 service
+categoriesasPrimary Keywords.
+No
+No
+AND
+M anual operation
+Document
+Process
+Database
+Preparation
+Decision
+Display
+Legend
+Fig. 4: Flowchart for identifying and categorizing Australian government domains by general and indigenous population.
+D. Dependency Graph Construction
+We construct two dependency graphs that illustrate the chain
+of dependencies between the DNS providers and the Australian government domains for both the general population
+and indigenous people. The are two types of relationships
+between domains and their name servers: direct and indirect dependencies. Direct dependency refers to a domain’s
+immediate reliance on the name servers that are explicitly
+designated in its DNS configuration without considering any
+further dependencies of those name servers themselves. An
+indirect dependency, on the other hand, arises when the name
+servers directly associated with a domain further rely on other
+name servers or DNS providers for their own resolution.
+This creates a chain of dependencies involving intermediate
+providers. This process results in a chain of dependencies
+from the domain/subdomain to the final authoritative name
+servers as well as the governmental websites and the final
+DNS providers, respectively. Fig. 3 illustrates an example of
+how nodes are connected in the dependency graph. Optus
+is the DNS provider of gleneria.vic.gov.au. Optus itself depends on Akamai as one of the hyperscaler-type providers.
+By visualizing the DNS dependency graph, we gain a clear
+and comprehensive understanding of how these entities are
+interconnected, allowing us to expose the impact of DNS
+dependencies on the indigenous and general domains.
+V. RESULTS
+We present our findings on DNS dependencies and their
+geographical distribution for Australian government domains
+serving the general population and indigenous communities.
+A. Direct Dependency Analysis
+We examine the immediate relationships between Australian
+government domains and their primary DNS providers. We
+analyze the distribution of these dependencies across different types of providers, including leading global companies,
+local Australian providers, and government-hosted services.
+Our findings reveal potential disparities in DNS provisioning
+between domains serving the general population and those
+targeted at indigenous communities. In Fig. 5, the dependency relationships between domains and DNS providers are
+illustrated, with providers classified as leading, non-leading,
+and governmental types. Leading DNS providers refer to
+the dominant and well-established companies in the industry,
+often associated with tech giants or hyperscalers. Examples
+of leading DNS providers mentioned in this paper include
+AWS Route 53, Microsoft Azure DNS, Cloudflare DNS,
+Google Cloud DNS, and Akamai Edge DNS. These providers
+have a significant market share and are known for their
+extensive infrastructure and global presence. Non-leading DNS
+providers, on the other hand, refer to smaller or lesser-known
+companies that offer DNS services. These providers may have
+a more limited market share compared to the leading providers
+and may operate on a regional or national scale. Examples
+of non-leading DNS providers in the Australian context are
+Telstra [44], Optus [18], and Webcentral [45]. Governmental
+DNS providers, in this paper, are those that are operated and
+managed by the Australian government sector. In this paper,
+these providers are specific to the government sectors that are
+used to host DNS services for some government websites and
+domains.
+Table II provides a summary of dependencies on thirdparty DNS providers for both general and indigenous domains. The data is divided into two categories: general and
+6
+indigenous populations, encompassing a total of 448 and 54
+domains, respectively. The analysis encloses various aspects of
+dependency, including the reliance on leading providers, nonleading providers (both domestic and international), as well
+as governmental providers. The analysis also examines two
+key aspects of DNS provider dependency: critical dependency
+and diversified dependency. Critical dependency refers to a
+domain’s reliance on a single DNS provider for its name
+resolution services. When a domain critically depends on a
+single provider, it becomes vulnerable to any disruptions,
+outages, or security issues affecting that provider. In contrast, diversified dependency refers to a domain’s reliance
+on multiple DNS providers, i.e., a site distributes its DNS
+infrastructure across different providers. This can enhance
+its resilience and availability, as a site is less likely to be
+impacted by issues affecting a single provider. It also allows
+for redundancy and fail-over mechanisms. Our results reveal
+a considerable amount of critical dependencies where just one
+DNS provider is used, with 92% and 100% for the general
+and indigenous domains, respectively. Specifically, 48.9% of
+general domains and 53.7% of indigenous domains rely on
+leading providers. Conversely, non-leading providers account
+for 31.3% of dependency in the general population and 46.3%
+in the indigenous populations. Moreover, the percentage of
+dependency on non-leading Australia-headquartered providers
+is almost doubled for indigenous people compared to the general domains. The dependency on non-leading non-Australian
+providers is relatively low for both groups at 8.5% and 3.7%
+for the general and the indigenous populations, respectively.
+Furthermore, the results reveal that 25.2% of domains in
+the general population are dependent on intra-government
+providers, something we do not find for the indigenous group.
+Additionally, a critical dependency on non-leading Australian
+providers is observed in 20.8% of general domains and 42.6%
+of indigenous domains. These findings demonstrate a significant prevalence of critical dependencies on DNS providers
+in Australia, particularly within the indigenous population,
+where 100% of domains are critically dependent on a single
+provider. For 2% of the general domains, we were unable to
+identify the exact companies that act as DNS providers from
+the information in the DNS records or from the WHOIS (as
+information there was redacted). Around 50% of the domains
+serving both general and indigenous populations depend on
+leading DNS providers. This indicates that few providers
+handle a large portion of DNS services which could lead to
+potential risks of service outages during large-scale attacks. On
+the other hand, the other half of the indigenous services and
+31.3% of general services rely on non-leading DNS providers.
+Fig. 6 and Table III specifically focus on the utilization of
+leading DNS providers by Australian governmental websites
+and show the percentages of domains that depend on specific
+leading providers. For instance, 21.4% of general domains rely
+on Amazon DNS services, while only 7.4% of indigenous
+domains do the same. The analysis also reveals the usage
+of other leading DNS providers, such as Microsoft, Cloudflare, Akamai, UltraDNS, Google, DNSimple, and EasyDNS,
+with varying proportions across the two population groups.
+That is, 31.5% of indigenous websites use Microsoft DNS
+0
+10
+20
+30
+40
+50
+60
+Leading Non-Leading Governmental Not-disclosed
+Domains/subdomains (%)
+General Population
+Indigenous Population
+Fig. 5: Dependency on various DNS provider types: general
+vs. indigenous domains.
+TABLE II: Direct and indirect dependencies on third-party
+DNS providers. Percentages reflect the proportion of the total
+number of domains that depend on the given provider type
+and do not sum to 100% due to overlapping dependencies.
+General(448) Indigenous(54)
+Provider Type Direct Indirect Direct
+Leading 219(48.9%) 18(4%) 29(53.7%)
+Non-Leading 140(31.3%) 12(2.7%) 25(46.3%)
+Non-Leading (domestic) 105(23.4%) 10(2.2%) 23(42.6%)
+Non-Leading (int’l.) 38(8.5%) 4(0.9%) 2(3.7%)
+Intra-Governmental 113(25.2%) N/A N/A
+Not-disclosed 8(1.8%) 3(0.7%) N/A
+Critical Dependency Direct Indirect Direct
+Any provider type 412(92%) 26(5.8%) 54(100%)
+Leading 202(45.1%) 17(3.8%) 29(53.7%)
+Non-Leading 122(27.2%) 9(2%) 25(46.3%)
+Non-Lead (domestic) 93(20.8%) 7(1.6%) 23(42.6%)
+Non-Leading (int’l.) 29(6.5%) 2(0.4%) 2(3.7%)
+Diverse Dependency Direct Indirect Direct
+Any provider type 36(8%) 3(0.7%) N/A
+Multiple Leading 8(1.8%) N/A N/A
+Multiple Non-Leading 2(0.4%) 2(0.4%) N/A
+Multiple Gov sections 6(1.3%) N/A N/A
+Intra-Gov & Leading 1(0.2%) N/A N/A
+Intra-Gov & Non-Leading 18(4%) N/A N/A
+providers. For general domains, this is around 17%. The rate
+of dependency on Cloudflare DNS providers for the indigenous population is 83% more than the share of the general
+population. In contrast, the general population uses Akamai,
+UltraDNS (Neustar), Google, and DNSimple providers in less
+than 5% of DNS services. However, indigenous websites do
+not use them. EasyDNS is only used by the indigenousfocused domains (5%). The final row of the table indicates
+a relatively small number of general domains that depend
+on two DNS providers, namely Amazon and Microsoft. This
+configuration is not observed for the indigenous group.
+Similarly, the dependency on non-leading DNS providers
+utilized in Australia is shown in Fig. 7. Approximately 24%
+of general domains rely on local DNS providers, whereas this
+proportion increases to over 40% for indigenous domains. In
+contrast, indigenous websites mainly depend on less than 5%
+7
+0
+5
+10
+15
+20
+25
+30
+35
+AmazonMicrosoft Cloudflare AkamaiUltraDNSGoogle DNSimple EasyDNS
+Domains/subdomains (%)
+General Population
+Indigenous Population
+Fig. 6: Dependency on leading DNS providers: general vs.
+indigenous domains.
+0
+5
+10
+15
+20
+25
+30
+35
+40
+45
+Domestic International
+Domains/subdomains (%)
+General Population
+Indigenous Population
+Fig. 7: Dependency on non-leading DNS providers: general
+vs. indigenous domains.
+of non-leading international DNS providers. This is close to
+9% for the general population.
+Fig. 8 and Table V focus on the most frequently used domestic DNS providers. These results indicate that a significant
+proportion of both the general and indigenous populations
+depend on non-leading DNS providers. Telstra emerges as
+the most commonly used DNS provider for both populations,
+followed by Macquarie Telecom and CITEC. Telstra, Australia’s largest telecommunications company (by market share
+[46]), has slightly less than 8% of the share from both general
+and indigenous domains. The share of Macquarie Telecom
+is less than 4% for the general population domains, and it
+is used by 6% of indigenous websites. CITEC (Centre for
+Information Technology and Communication [47] [48]), the
+Queensland Government’s primary ICT services provider, has
+only a 4% share of general domains. This number is only 2%
+for the indigenous population. Webcentral has an equal share
+of less than 2% from both general and indigenous domains.
+4% of indigenous DNS services are dependent on less-known
+Australian DNS providers such as OPC IT and ThreeAMWeb.
+General domains use Optus (which is a large subsidiary of
+a Singaporean telecommunications company). A significant
+outage of the Optus network occurred on 8 November 2023,
+affecting numerous customers and services across Australia
+[49]. This incident shows the potential risks associated with
+relying on a single non-leading DNS provider. No indigenous
+TABLE III: Leading DNS providers for the indigenous and
+general population domains
+Number of domains General Indigenous
+Total 219(48.9%) 29(53.7%)
+Dependent on Amazon 11(21.4%) 4(7.4%)
+Dependent on Microsoft 79(17.6%) 17(31.5)%)
+Dependent on Cloudflare 27(6%) 6(11.1%)
+Dependent on Akamai 11(2.5%) 0
+Dependent on UltraDNS 4(0.9%) 0
+Dependent on Google 1(0.2%) 0
+Dependent on DNSimple 1(0.2%) 0
+Dependent on EasyDNS 0 2(3.7%)
+Dependent on both Amazon and Microsoft 6(1.3%) 0
+0
+1
+2
+3
+4
+5
+6
+7
+8
+Telstra MacquarieCITEC Optus Webcentral OPC-IT 3AMweb
+Domains/subdomains (%)
+General Population
+Indigenous Population
+Fig. 8: Dependency on most commonly used domestic DNS
+providers: general vs. indigenous populations.
+domains were found to depend on non-Australian companies,
+while 14 general domains rely on the US-based company
+Verizon. These results show that there is a diverse range of
+DNS providers used by both populations, with some reliance
+on domestic providers and a limited reliance on non-Australian
+companies, and indigenous domains expose a higher reliance
+on non-leading providers.
+In Fig. 9, we illustrate how domains are distributed among
+the general population with multiple providers. Notably, none
+of the indigenous domains are dependent on multiple DNS
+providers. As shown in this figure, 20% of domains have
+two distinct leading DNS providers (Amazon and Microsoft),
+and less than 5% have two different non-leading providers.
+Additionally, less than 20% of domains have intra-government
+DNS providers that point to different government sectors. Over
+half of general domains use both a government-hosted provider
+and a third-party DNS provider.
+B. Indirect Dependencies
+Indirect dependencies represent a more complex web of
+relationships in DNS provisioning. We investigate these to
+disclose hidden vulnerabilities and centralization patterns that
+may not be evident from direct dependencies alone. We
+explore how indirect dependencies occur in general domains
+(Table IV), focusing on the relationship between a domain’s
+immediate DNS provider type (namely, leading and nonleading provider, with either Australian headquarters or nonAustralian headquarters) and its reliance on the indirect DNS
+8
+TABLE IV: Direct/indirect dependencies, general domains.
+ule No. of domains Direct Indirect
+5 Not-disclosed Leading
+1 Intra-gov Leading
+11 Intra-gov Non-leading (domestic&international)
+11 Intra-gov Non-leading (domestic)
+2 Intra-gov Non-leading (international)
+12 Non-leading Leading
+2 Non-leading Non-leading (international)
+TABLE V: Non-leading DNS providers.
+Number of domains General Indigenous
+Total 142(31.7%) 25(46.3%)
+Dependent on Telstra 34(7.6%) 4(7.4%)
+Dependent on Macquarie Telecom 17(3.8%) 3(5.6%)
+Dependent on CITEC 15(3.3%) 1(1.6%)
+Dependent on Verizon 14(3.1%) 0
+Dependent on Optus 9(2%) 0
+Dependent on Webcentral 7(1.6%) 11(1.9%)
+Dependent on NEC 7(1.6%) 0
+Dependent on OPC IT 0 2(3.7%)
+Dependent on Three AM Web 0 2(3.7%)
+provider type, and discuss the implications for service reliability and security. In our observation, there is no evidence
+of indirect dependencies for government domains dedicated to
+indigenous people. Our examination reveals a dependence on
+major companies such as Amazon and Akamai. Interestingly,
+one domain employing government-hosted DNS services also
+has an indirect dependency on Amazon. While certain domains
+directly depend on intra-government services, their indirect
+dependencies often lie with non-leading, both domestic and
+international, providers such as Telstra, Optus, and CITEC.
+This diversity in indirect providers could offer redundancy
+and reduce single points of failure while also introducing
+complexity and potential exposure to vulnerabilities. A significant observation is the indirect dependency of 12 domains
+on leading providers despite their direct reliance on nonleading ones. This pattern underscores the pervasive influence of hyperscalers such as Amazon and Akamai in the
+DNS infrastructure. The contrast between direct and indirect
+dependencies reveals a critical aspect of DNS infrastructure
+management. For general population domains, this leads to
+centralization around a few hyperscaler entities.
+C. Geographical Distribution of DNS Servers
+The physical location of DNS servers plays a crucial role in
+the performance and resilience of online services. By examining the geographical distribution of IP addresses associated
+with DNS servers, especially those serving specific domains
+such as Australian government domains dedicated to indigenous peoples, we can disclose patterns of reliance on thirdparty providers. We map the geographical distribution of DNS
+servers associated with Australian government domains and
+analyze how server locations differ for domains serving the
+general population versus those focused on indigenous communities. For this, we leveraged the IP2Location database.
+In addition to the geographical location, IP2Location also
+provides information about the usage type of IP addresses.
+The usage types relevant to our analysis are as follows: 0
+10
+20
+30
+40
+50
+60
+Lead&Lead NonLead&NonLead Intra-gov Gov&Third-party
+Domains/subdomains (%)
+Fig. 9: Diversified dependencies in general domains.
+1) ISP (Internet Service Provider): IP addresses associated
+with Internet service providers 2) DCH (Data Center/Web
+Hosting/Transit): IP addresses belonging to data centers, web
+hosting companies, or transit providers (the latter category is
+less likely to contain authoritative name servers) 3) CDN (Content Delivery Network) 4) GOV (Government): IP addresses
+assigned to government entities, implying that the DNS server
+is operated by a government organization.
+A problem that is common to geolocation databases is that
+IP addresses, especially of hyperscalers, may be attributed to
+the wrong country, in addition to IP allocations also everchanging (which may change the usage type). Given our small
+sample size, our results must be taken with a grain of salt.
+For example, the geographical distribution of the DNS servers
+associated with Australian government domains for indigenous
+peoples spans across five countries: Australia, Canada, Hong
+Kong, Japan, and the United States. The Australian setting is
+much more plausible than that of Hong Kong or Japan, which
+may be such cases of wrong attributions. However, it would
+still imply the use of powerful providers and hyperscalers.
+In Australia, the presence of ISP/DCH usage types indicates
+a mix of local Internet service provisioning and data center
+hosting. The United States is also a plausible hosting location:
+it hosts the highest number of DNS servers, indicating a
+heavy reliance on US-based infrastructure. However, it is still
+possible that these servers are physically located in Australia.
+An international dependency may well be more vulnerable,
+both from a technical and operational point of view.
+Both domain groups have DNS servers primarily located in
+Australia and the United States, as shown in Fig. 10, 11, 12,
+and 13. The breakdown into usage types in Fig. 11 indicates
+an overall diversified approach to DNS service provisioning
+for the general domains. The presence of ISPs suggests
+localized service delivery, while CDNs (Content Delivery Networks) highlight efforts to optimize content distribution and
+performance. A small proportion is classified under “Gov”,
+indicating government-managed servers, which may signify an
+intention for self-reliance and control over DNS infrastructure.
+This hints at a balance between globalized service provision
+and localized service delivery and at strategic approaches to
+deployment and performance optimization. The presence of
+government-managed servers is also noteworthy, especially as
+they are not present in the indigenous-focused infrastructure.
+The DNS infrastructure for the general population seems to
+have a greater emphasis on diversity and global distribution
+9
+0
+200
+400
+600
+800
+1000
+1200
+Australia Japan Hong Kong U.S. Other
+Number of IPs
+Fig. 10: Geographical location of general domains’ NS.
+0
+200
+400
+600
+800
+1000
+Australia Japan Honk Kong U.S. Other
+Number of IPs
+ISP
+DCH
+CDN
+Gov
+Fig. 11: Usage type for general domains’ NS.
+compared to that of the indigenous peoples. The inclusion
+of government servers for the general population suggests an
+element of direct governmental control or self-reliance. For
+the indigenous-focused domains, the emphasis appears to be
+on a mix of local and international service provisioning with
+a significant dependency on DCH and CDN providers.
+VI. DISCUSSION
+Our analysis of DNS dependencies for Australian government domains reveals implications for the digital divide,
+geographic dependencies, and security vulnerabilities. We discuss these findings in the context of our three main research
+questions.
+A. Digital Divide
+Our results provide evidence of a digital divide in DNS
+provisioning between general and indigenous domains. The
+main difference is the critical dependency on single providers:
+100% of indigenous domains rely on a single DNS provider,
+compared to 92% of general domains. This higher dependency
+makes indigenous domains more vulnerable to service disruptions and potential attacks. Furthermore, indigenous domains
+0
+10
+20
+30
+40
+50
+60
+Australia Canada Hong Kong Japan U.S.
+Number of IPs
+Fig. 12: Geographical location of indigenous domains’ NS.
+0
+10
+20
+30
+40
+50
+Australia Canada Hong Kong Japan U.S.
+Number of IPs
+ISP
+DCH
+CDN
+Fig. 13: Usage type for indigenous domains’ NS.
+show a greater reliance on non-leading DNS providers (46.3%)
+compared to general domains (31.3%). While this might reflect
+a preference for local services, it also exposes these domains
+to potential reliability issues, especially given that some of
+these providers may have limited resources for security and
+maintenance. Surprisingly, none of the indigenous domains
+utilize government-operated DNS infrastructure. This absence
+requires further investigation to understand its causes and
+implications for security and reliability.
+B. Geographic Dependencies
+The geographical distribution of DNS servers reveals another aspect of DNS provisioning, although we caution that
+geolocation information can be misleading, and hence our
+results must be viewed in that light. Nevertheless, some
+trends are evident. General population domains benefit from a
+broader global spread. In contrast, indigenous domains show a
+higher concentration of servers in fewer locations. The limited
+geographic diversity for indigenous domains could lead to
+increasing vulnerability to regional outages, imposing potential latency issues for users in different regions and greater
+10
+exposure to geographically targeted attacks. The preference for
+domestic DNS providers by over 40% of indigenous domains,
+while potentially driven by a desire for geographically closer
+services, may increase the vulnerability to region-specific
+disruptions or attacks.
+C. Security Analysis
+For our analysis of how various forms of dependencies lead
+to a site being more or less vulnerable, we define three different attacker models. We categorize potential attackers into
+three representative groups of varying strengths: lone wolves
+(including individual attackers) [50], [51], the organized fringe
+attackers (such as hacktivists) [52]–[55], and global actors
+(e.g., nation states) [56], [57]. Each group has different resources, intentions, and targets, ranging from limited-resource
+attackers targeting specific populations to well-funded, expert
+attackers operating on a global scale.
+We call our first attacker “lone wolf—weak but targeted”.
+This attacker does not have many resources (hardware, network access, deep technical knowledge, finances) at their disposal. However, they act out of a strong, personal motivation,
+and they only target particular organizations. An example of
+such strong motivation would be hate of a particular societal
+minority (e.g., racist sentiments, resentment of the LGBTQ+
+community, etc). Their likely target is organizations representing or aiding such minorities, and their tools are limited to
+what limited financial means can afford—for example, paying
+an underground service a small amount of money to stage a
+limited DDoS attack. In the context of our results, this attacker
+is more concerned with the indigenous domains. The lack of
+DNS service diversity makes indigenous domains particularly
+vulnerable. Even with limited resources, a lone wolf attacker
+could potentially disrupt services by focusing on the single
+provider used by a domain.
+We call our second attacker “organized fringe—limited and
+targeted”. This attacker is typically a group that can raise
+some relevant resources (financial contributions by members,
+donations) and gain access to relevant knowledge that can
+be used in an attack (e.g., members with a deep technical
+background). The motivation is broader than in the previous
+attacker model and represents, for instance, political fringe
+movements: anti-democratic forces that also target minority
+groups or direct resentment at them in a bid to win more
+support. The likely targets are the same as before as well
+as various government services. This attacker can invest substantially more resources—a more powerful DDoS attack is a
+possibility, as is a takeover of the IT services of some smaller
+companies with less stringent security. This attacker type is
+of concern for both domain groups, but still more so for the
+indigenous domains. The concentration of indigenous domains
+on Australian providers makes them particularly attractive
+targets.
+We call our third attacker a “global actor—resourceful and
+impact-oriented”. This attacker has means at their disposal that
+one would usually associate with organized crime or, at worst,
+even rogue nation-states. They can make substantial investments into sustained attacks and have access to skilled hackers.
+The motivation here may be much broader than before: the
+attacker may be less interested in hurting smaller organizations
+and more focused on causing widespread damage that has
+economic ramifications and will draw attention from politics,
+often at a global level. Damage to services aiding minorities
+may be a welcome side effect, but the targets would more
+commonly be large, professional enterprises that offer cloud
+services—in the more extreme cases, even global hyperscalers,
+such as the DDoS attack on Amzon’s DNS service in October
+2019 [58]. While these sophisticated attackers pose a threat to
+all domains, the lack of diversity and redundancy in indigenous
+domain DNS infrastructure makes them particularly vulnerable
+to widespread, high-impact attacks.
+To mitigate these risks, we recommend the following: (1)
+Implementing multi-provider setups for all domains, especially
+indigenous ones. (2) Diversifying the geographic locations
+of DNS servers. (3) Incorporating government-operated DNS
+services as an additional layer of resilience. These measures
+would enhance the security against at least the two less powerful forms of attackers and improve overall service reliability.
+VII. SUMMARY
+This paper investigated the impact of Internet centralization on DNS provisioning and its security implications,
+particularly focusing on the indigenous and general populations in Australia. The study categorized DNS providers
+into leading (hyper-scaler, US-headquartered companies), nonleading (smaller Australian-headquartered or non-Australian
+companies), and Australian government-hosted providers and
+constructed dependency graphs to demonstrate direct and
+indirect dependencies of Australian government domains on
+these providers.
+Our main findings included as follows: (1) Digital Divide:
+There is a significant difference in the DNS service providers
+used for indigenous and general population domains, which
+imposes potential disparities in service quality and reliability.
+Indigenous domains revealed a higher dependency on nonleading DNS providers compared to general population domains, indicating a digital divide in DNS provisioning. (2)
+Geographic Dependencies: The geographical distribution of
+DNS servers revealed the concentration of servers in fewer locations for indigenous domains, which could lead to increased
+vulnerability to regional outages and potential latency issues.
+The DNS servers for general population domains benefit from
+a broader global spread. (3) Security Problems: The study
+demonstrated vulnerabilities of each domain group to different
+attacker models. Indigenous domains are more vulnerable due
+to their critical dependency on single providers and limited geographic diversity. The analysis categorized potential attackers
+into lone wolves, organized fringe attackers, and global actors,
+each posing different levels of threat to the DNS infrastructure.
+The paper implied that addressing these disparities and
+vulnerabilities requires implementing multi-provider setups,
+diversifying geographic server locations, and incorporating
+government-operated DNS services to enhance security and
+service availability, which could be the future research effort
+on DNS dependency.
+11
+REFERENCES
+[1] J. Arkko, B. Trammell, M. Nottingham, C. Huitema, M. Thomson,
+J. Tantsura, and N. ten Oever, “Considerations on internet consolidation
+and the internet architecture,” internet draft, IETF, 2019.
+[2] “Top 10 managed dns service providers in the
+world today.” https://www.emergenresearch.com/blog/
+top-10-managed-dns-service-providers-in-the-world-today. Accessed:
+2024-01-12.
+[3] Amazon Web Services, Inc., “Amazon route 53,” 2024. Accessed: 2024-
+03-31.
+[4] Microsoft Corporation, “Azure dns,” 2024. Accessed: 2024-03-31.
+[5] Cloudflare, Inc., “Cloudflare dns,” 2024. Accessed: 2024-03-31.
+[6] Google LLC, “Google cloud dns,” 2024. Accessed: 2024-03-31.
+[7] Akamai Technologies, “Akamai edge dns,” 2024. Accessed: 2024-03-31.
+[8] “Centralization, Decentralization, and Internet Standards.” RFC 9518,
+Dec. 2023.
+[9] CrowdStrike, “Remediation and guidance hub: Falcon content
+update for Windows hosts.” https://www.crowdstrike.com/
+falcon-content-update-remediation-and-guidance-hub/, 25 July 2024.
+[10] Cloudflare, “Understanding how Facebook disappeared from the internet.” https://blog.cloudflare.com/october-2021-facebook-outage, 4 October 2021.
+[11] N. Nazemi, O. Tavallaie, A. Y. Zomaya, and R. Holz, “DNS Dependencies as an Expression of the Digital Divide: the Example of Australia,” in
+European Symposium on Research in Computer Security, pp. 496–509,
+Springer, 2023.
+[12] T. 2023, “The TAURIN 2023 Workshop on Responsible Internet.” https:
+//taurin2023.responsible-internet.org/. Accessed: [Access Date].
+[13] P. Mockapetris, “Domain names - concepts and facilities,” Request for
+Comments 1034, Internet Engineering Task Force, 1987.
+[14] P. Mockapetris, “Domain names - implementation and specification,”
+Request for Comments 1035, Internet Engineering Task Force, 1987.
+[15] I. A. N. Authority, “Root server information.” https://www.iana.org/
+domains/root/servers, 2023. Accessed on Jan 12, 2024.
+[16] A. Kashaf, V. Sekar, and Y. Agarwal, “Analyzing third party service
+dependencies in modern web services: Have we learned from the
+mirai-dyn incident?,” in Proceedings of the ACM Internet Measurement
+Conference, pp. 634–647, 2020.
+[17] M. Ikram, R. Masood, G. Tyson, M. A. Kaafar, N. Loizon, and R. Ensafi,
+“The chain of implicit trust: An analysis of the web third-party resources
+loading,” in The World Wide Web Conference, pp. 2851–2857, 2019.
+[18] Optus, “Optus,” 2024. Accessed: 2024-04-08.
+[19] J. Van Dijk, The digital divide. John Wiley & Sons, 2020.
+[20] K. Samaras, “Indigenous australians and the ‘digital divide’,” International Journal of Libraries and Information Studies, vol. 55, no. 2-3,
+pp. 84–95, 2005.
+[21] Australian Public Service Commission, “First nations vocabulary: Using
+culturally appropriate language and terminology,” 2024. Accessed: 2024-
+03-31.
+[22] G. Singleton, M. F. Rola-Rubzen, K. Muir, D. Muir, and M. McGregor,
+“Youth empowerment and information and communication technologies:
+A case study of a remote australian aboriginal community,” GeoJournal,
+vol. 74, pp. 403–413, 2009.
+[23] United Nations Department of Economic and Social Affairs,
+“United nations declaration on the rights of indigenous
+peoples.” https://social.desa.un.org/issues/indigenous-peoples/
+united-nations-declaration-on-the-rights-of-indigenous-peoples, 2024.
+Accessed: 2024-03-31.
+[24] S. Wang, A. Cao, G. Wang, and Y. Xiao, “The impact of energy poverty
+on the digital divide: The mediating effect of depression and internet
+perception,” Technology in Society, vol. 68, p. 101884, 2022.
+[25] C. Intahchomphoo, “Indigenous peoples, social media, and the digital
+divide: A systematic literature review,” American Indian Culture and
+Research Journal, vol. 42, no. 4, pp. 85–111, 2018.
+[26] L. Zembruzki, R. Sommese, L. Z. Granville, A. S. Jacobs, M. Jonker,
+and G. C. Moura, “Hosting industry centralization and consolidation,”
+in NOMS 2022-2022 IEEE/IFIP Network Operations and Management
+Symposium, pp. 1–9, IEEE, 2022.
+[27] “Openintel.” https://openintel.nl, 2023. Accessed on May 29, 2023.
+[28] L. Zembruzki, A. S. Jacobs, and L. Z. Granville, “On the consolidation
+of the internet domain name system,” in GLOBECOM 2022-2022 IEEE
+Global Communications Conference, pp. 2122–2127, IEEE, 2022.
+[29] G. C. M. Moura, S. Castro, W. Hardaker, M. Wullink, and C. Hesselman,
+“Clouding up the internet: how centralized is dns traffic becoming?,”
+in Proceedings of the ACM Internet Measurement Conference (IMC
+’20), (New York, NY, USA), pp. 42–49, Association for Computing
+Machinery, 2020.
+[30] “Alexa - top sites.” https://www.alexa.com, 2023. Accessed on May 30,
+2023.
+[31] C. Deccio, J. Sedayao, K. Kant, and P. Mohapatra, “Measuring availability in the domain name system,” in 2010 Proceedings IEEE INFOCOM,
+pp. 1–5, IEEE, 2010.
+[32] C. Deccio, J. Sedayao, K. Kant, and P. Mohapatra, “Quantifying dns
+namespace influence,” Computer Networks, vol. 56, no. 2, pp. 780–794,
+2012.
+[33] C. Deccio, C.-C. Chen, P. Mohapatra, J. Sedayao, and K. Kant, “Quality
+of name resolution in the domain name system,” in 2009 17th IEEE
+International Conference on Network Protocols, pp. 113–122, IEEE,
+2009.
+[34] H. Xu, Z. Zhang, J. Yan, and T. Chai, “Name dependency and domain
+name resolution risk assessment,” IEEE Transactions on Network and
+Service Management, vol. 19, no. 3, pp. 3413–3424, 2022.
+[35] A. Kashaf, J. Dou, M. Belova, M. Apostolaki, Y. Agarwal, and V. Sekar,
+“A first look at third-party service dependencies of web services in
+africa,” in Passive and Active Measurement: 24th International Conference, PAM 2023, Virtual Event, March 21–23, 2023, Proceedings,
+pp. 595–622, Springer, 2023.
+[36] T. Urban, M. Degeling, T. Holz, and N. Pohlmann, “Beyond the front
+page: Measuring third party dynamics in the field,” in Proceedings of
+The Web Conference 2020, pp. 1275–1286, 2020.
+[37] G. C. Moura, S. Castro, J. Heidemann, and W. Hardaker, “tsuname: exploiting misconfiguration and vulnerability to ddos dns,” in Proceedings
+of the 21st ACM Internet Measurement Conference, pp. 398–418, 2021.
+[38] “Services australia.” https://www.servicesaustralia.gov.au, 2023. Accessed on Jun 1, 2023.
+[39] “Australian Institute of Health and Welfare (AIHW).” https://www.aihw.
+gov.au/. Accessed: 2024-04-01.
+[40] Department of Social Services, Australian Government, “Program services for people with disability,” 2024. Accessed: 2024-04-02.
+[41] N. Nazemi, “Australian Government Domains for General and Indigenous Populations: NS Records and DNS Provider IPGeolocation,” 2024.
+[42] “Root servers.” https://root-servers.org, 2023. Accessed on Jun 1, 2023.
+[43] Internic, “Named root file.” https://www.internic.net/domain/named.root,
+2023. Accessed on Feb 22, 2023.
+[44] Telstra, “Broadband internet, nbn, 5g, tv & mobile phone services,”
+2024. Accessed: 2024-06-12.
+[45] Webcentral, “Australian domain names, hosting, website & emails,”
+2024. Accessed: 2024-06-12.
+[46] “Telstra group limited.” https://en.wikipedia.org/wiki/Telstra, 2023. Accessed on March 26, 2023.
+[47] “Queensland state archives.” https://www.archivessearch.qld.gov.au/
+agencies/A482, 2023. Accessed on March 26, 2023.
+[48] “Citec.” https://services.citec.com.au/about/, 2023. Accessed on March
+26, 2023.
+[49] Parliament of Australia, “Optus network outage,” 2024. Accessed: 2024-
+06-12.
+[50] G. C. Kessler, “Lone operator cyberterrorism from the perspective of
+a hacker,” Lone Actors–An Emerging Security Threat, vol. 123, p. 45,
+2015.
+[51] G. C. Kessler, “Lone-operator cyberterrorism,” Journal of Information
+Warfare, vol. 15, no. 1, pp. 15–28, 2016.
+[52] J. Jing, P. Liu, D. Feng, J. Xiang, N. Gao, and J. Lin, “Areca: a highly
+attack resilient certification authority,” in Proceedings of the 2003 ACM
+workshop on Survivable and self-regenerative systems: in association
+with 10th ACM Conference on Computer and Communications Security,
+pp. 53–63, 2003.
+[53] R. Girtler, “The fringe group of hackers—rebels, spies and thieves,” e &
+i Elektrotechnik und Informationstechnik, vol. 120, pp. 216–219, 2003.
+[54] S. R. Davies, “Characterizing hacking: Mundane engagement in us
+hacker and makerspaces,” Science, Technology, & Human Values,
+vol. 43, no. 2, pp. 171–197, 2018.
+[55] P. A. Taylor, “From hackers to hacktivists: speed bumps on the global
+superhighway?,” New Media & Society, vol. 7, no. 5, pp. 625–646, 2005.
+[56] J. Sheldon, “State of the art: Attackers and targets in cyberspace,”
+Journal of Military and Strategic Studies, vol. 14, no. 2, 2012.
+[57] A. Pawlicka, M. Choras, and M. Pawlicki, “Cyberspace threats: not ´
+only hackers and criminals. raising the awareness of selected unusual
+cyberspace actors-cybersecurity researchers’ perspective,” in Proceedings of the 15th International Conference on Availability, Reliability
+and Security, pp. 1–11, 2020.
+[58] C. Williams, “Bezos ddos’d: Amazon web services’ dns systems knackered by hours-long cyber-attack,” The Register, 2019.
+12
+Niousha Nazemi is currently a PhD student in the
+School of Computer Science, University of Sydney,
+Australia. Her main research interests include Internet centralization, DNS measurement, and security
+of federated learning.
+Omid Tavallaie is a Postdoctoral Researcher in
+Computer Networking at the Department of Engineering Science, University of Oxford. Prior to
+joining the University of Oxford, he was a Research
+Associate and Lecturer at the School of Computer
+Science, The University of Sydney, and a member
+of the Centre for Distributed and High-Performance
+Computing (Australia). He holds a PhD in Computer
+Science from the University of Sydney in 2021.
+Anna Maria Mandalari works as Assistant Professor at University College London (UCL). She
+is affiliated with the Electronic & Electrical Engineering Department. She is member of the Italian
+Technical Secretariat of the Committee for strategies
+on the use of AI. She is Honorary Research Fellow
+at the Institute for Security Science and Technology
+at Imperial College London and expert fellow of the
+UK SPRITE+ Hub. She obtained her PhD within the
+framework of the METRICS project, which is part
+of the Marie Skłodowska-Curie action, intended for
+excellent researchers, affiliated with the Carlos III University of Madrid. Her
+research interests are Internet of Things (IoT), privacy, security, networking,
+Internet measurement techniques, and AI. She studies privacy implications
+and information exposure from IoT devices. She works on the problem of
+modelling, designing, and evaluating adaptation strategies based on Internet
+measurements techniques. In addition to her research, Anna gives invited
+talks all around the world to promote research and create awareness on
+security, privacy, and ethical AI. Most of her research experiences have also
+significantly contributed to several EU-funded research projects and have had
+a significant influence on media and policymaking.
+Hamed Haddadi (Member, IEEE) is a Professor
+in Human-Centred Systems at the Department of
+Computing at Imperial College London. He is part
+of Imperial-X (I-X) where he leads the Privacy and
+Security Research Area. He also serves as a Security
+Science Fellow of the Institute for Security Science
+and Technology. In his industrial role, he is the Chief
+Scientist at Brave. His research interests are in UserCentred Systems, IoT, Applied Machine Learning,
+Privacy, and Human-Data Interaction.
+Ralph Holz is a Full Professor at the University of
+Munster in Germany, and co-appointed at the Uni- ¨
+versity of Twente in the Netherlands. His research
+interests revolve around empirical security analysis,
+with a focus on Internet security.
+Albert Y. Zomaya (Fellow, IEEE) is the Peter Nicol
+Russell Chair Professor of Computer Science in the
+School of Computer Science, Sydney University,
+and the Director of the Centre for Distributed and
+High-Performance Computing. Professor Zomaya
+has published over 700 scientific papers and articles
+and is the author, co-author, or editor of more than
+30 books. He is a decorated scholar with numerous accolades, including Fellowships of the IEEE,
+AAAS, and the IET. Also, he is a Fellow of the
+Australian Academy of Science, a Fellow of the
+Royal Society of New South Wales, a Foreign Member of Academia Europaea,
+and a Member of the European Academy of Sciences and Arts. His research
+interests include parallel and distributed computing, networking, and complex
+systems.
