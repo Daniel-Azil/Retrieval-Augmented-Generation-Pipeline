@@ -1,0 +1,4358 @@
+Rethinking Bradley-Terry Models in Preference-Based
+Reward Modeling: Foundations, Theory, and Alternatives
+Hao Sun∗ hs789@cam.ac.uk
+University of Cambridge
+Cambridge, UK
+Yunyi Shen∗ yshen99@mit.edu
+Massachusetts Institute of Technology
+Cambridge, MA, USA
+Jean-Francois Ton jeanfrancois@bytedance.com
+ByteDance Research
+London, UK
+Abstract
+The Bradley-Terry (BT) model is a common and successful practice in reward modeling for
+Large Language Model (LLM) alignment. However, it remains unclear why this model —
+originally developed for multi-player stochastic game matching — can be adopted to convert
+pairwise response comparisons to reward values and make predictions. Especially given the
+fact that only a limited number of prompt-response pairs are sparsely compared with others.
+In this paper, we first revisit the foundations of using BT models in reward modeling, and
+establish the convergence rate of BT reward models based on deep neural networks using
+embeddings, providing a theoretical foundation for their use. Despite theoretically sound,
+we argue that the BT model is not a necessary choice from the perspective of downstream
+optimization. This is because a reward model only needs to preserve the correct ranking
+predictions through a monotonic transformation of the true reward. We highlight the
+critical concept of order consistency in reward modeling and demonstrate that the BT
+model possesses this property. Consequently, we propose a simple and straightforward
+upper-bound algorithm, compatible with off-the-shelf binary classifiers, as an alternative
+order-consistent reward modeling objective. To offer practical insights, we empirically
+evaluate the performance of these different reward modeling approaches across more than
+12,000 experimental setups, using 6 base LLMs, 2 datasets, and diverse annotation designs
+that vary in quantity, quality, and pairing choices in preference annotations.
+Keywords: Bradley-Terry Models, Large Language Model Alignment, Preference-based
+Reward Modeling, Reinforcement Learning from Human Feedback
+1 Introduction
+The alignment of Large Language Models (LLMs) is crucial for their safe and effective
+deployment across various applications. Current research on reinforcement learning from
+human feedback (RLHF) (Christiano et al., 2017; Stiennon et al., 2020; Ouyang et al., 2022;
+Bai et al., 2022a) has largely focused on utilizing preference-based annotations provided by
+humans or general-purpose LLMs (Bai et al., 2022b; Lee et al., 2023; Guo et al., 2024). In
+general, there are two primary approaches to RLHF, namely the direct policy optimization
+(Rafailov et al., 2024; Zhao et al., 2023; Azar et al., 2023) that aligns LLMs with supervised
+learning objectives, and the alternate method that constructs a reward model to guide the
+©2024 Hao Sun∗, Yunyi Shen∗, Jean-Francois Ton.
+License: CC-BY 4.0, see https://creativecommons.org/licenses/by/4.0/.
+arXiv:2411.04991v1 [cs.AI] 7 Nov 2024
+Hao Sun∗
+, Yunyi Shen∗
+, Jean-Francois Ton
+LLM optimization via either supervised learning or reinforcement learning (Yuan et al.,
+2023; Dong et al., 2023; Munos et al., 2023; Li et al., 2023).
+Among these strategies, the Bradley-Terry (BT) model (Bradley and Terry, 1952) is
+commonly employed to convert pairwise comparisons into scores and has demonstrated its
+success in large-scale alignment systems (Ouyang et al., 2022; Touvron et al., 2023). Despite
+its empirical success, the theoretical justification for using the BT model in this context
+remains underexplored, particularly when dealing with sparse comparisons on a limited
+number of prompt-response pairs. Furthermore, it is unclear how necessary it is to use the
+BT models, and what data format is preferred in annotation. Our work aims to address
+these key questions by reflecting on reward modeling in LLM alignment. The subsequent
+sections of this paper are structured to answer those questions:
+• Question 1: When the number of players is greater than the number of comparisons (as often the case in LLM alignment), is the use of the BT model
+theoretically sound, and what factors contribute to its empirical success?
+In Section 2 we first review the usage of BT models from a statistics perspective. We show
+that the classical BT model can be seamlessly applied to the LLM arena cases (Chiang
+et al., 2024), but falls short in reward modeling due to the extremely sparse comparison and the requirement of making predictions. We explore the regression variants of
+BT models (e.g., Springall, 1973; Bockenholt, 1988) and their neural network extensions,
+providing theoretical results on their ability to approximate true reward up to an additive
+constant in the context of LLM alignment.
+• Question 2: What are alternative approaches to reward modeling other than
+the BT model?
+Since the primary objective of reward modeling is to optimize LLMs outputs by identifying the good response in inferences, learning a reward function up to any monotonic
+transformation should be sufficient for such an objective. This fact motivates us to propose a simple objective based on order consistency in Section 3. We show both the
+BT model and Classification models fall in this objective class. Corresponding empirical
+studies are conducted in Section 6.
+• Question 3: The conventional applications of the BT model assume randomized pairwise comparisons (e.g., randomized game matches among players).
+Would cross-prompt comparisons lead to more effective reward modeling?
+Our theoretical analysis emphasizes the necessity of using regression on the embedding
+space to predict rewards, which hints at the possibility of different types of comparisons.
+Specifically, we find no inherent advantages in restricting comparisons to responses from
+the same prompt, as is commonly done in the literature. In Section 4, we theoretically
+analyze the superiority of cross-prompt annotations in LLM alignment, and we empirically investigate the impact of cross-prompt comparisons and provide insights into their
+potential benefits in Section 6.
+The contributions of this paper can be summarized as follows:
+1. Formally, we provide a comprehensive analysis of the application of the BT model in
+LLM alignment, contrasting its traditional use in multi-player arenas with the unique
+challenges posed in this context. We analyze the underlying rationale and offer a thorough justification for applying the BT model to LLM reward modeling.
+2
+Reward Modeling
+2. Theoretically, we introduce the first asymptotic theory for neural network-based BT
+regression in preference-based reward modeling. Our work establishes the first risk bound
+for BT model reward estimation in the context of LLM alignment.
+3. Practically, we propose order consistency as a core objective of reward modeling, demonstrating how this principle can derive both the BT model and an alternative classificationbased approach. This alternative offers greater flexibility compared to the BT model,
+broadening its applicability.
+4. Empirically, we conduct extensive experiments — covering 6 base LLMs, 2 datasets, 3
+response sampling methods, 6 annotation noise levels, 3 reward model implementations,
+4 annotation availability scenarios, and 5 random seeds — resulting in over 12,000 runs.
+These experiments demonstrate the statistical efficacy of the classification-based reward
+models and compare them with the BT model across diverse settings.
+2 Rethinking the Usage of BT Models in LLM Alignment
+2.1 Two Different BT Models — Parameter Estimation and Prediction
+The original BT model (Bradley and Terry, 1952), aligned with the Luce-Shephard choice
+rule (Luce, 1959; Shepard, 1957), posits that in a simplified two-option scenario, the probability of selecting option i from a set i, j is proportional to the utility u(·) assigned to that
+option. Formally, this can be expressed as a softmax output of the log utilities r(·) (Bockenholt, 1988)
+P(i ≻ j) = u(i)
+u(i) + u(j)
+=
+exp(r(i))
+exp(r(i)) + exp(r(j)) = softmax(r(i), r(j)). (1)
+LLM Arena with the BT Model One of the successful applications of the classical BT
+model in the LLM is the chatbot arenas (Chiang et al., 2024), where multiple LLMs compete
+against one another based on human feedback through paired comparisons. Here, each LLM
+functions as a player, and the human-annotated preferences represent the outcome of these
+game matches. The goal is to assign a single performance score to each LLM player. In
+Chiang et al. (2024) 130 models were compared across more than 1.7 million comparisons,
+with each model participating in over 26, 000 matches on average.
+In such a setting, estimating the values of r(·) is sufficient to achieve the primary goal
+of evaluating each chatbot’s performance. This aligns closely with the original objective of
+BT model in ranking sports teams (Bradley and Terry, 1952). Previous work has shown
+that, with enough pairwise competition, one can estimate these ability scores well (Ford Jr,
+1957; Han et al., 2020; Wu et al., 2022) up to a constant additive factor. It is shown
+that to estimate N scores via random pairwise comparisons, the theoretical lower bound
+on the number of comparisons is O(N log(N))1
+, while the best-known methods require
+O(N log3
+(N)) comparisons (Han et al., 2020).
+Reward Modeling with BT Model: Understanding Implicit Assumptions In
+contrast, the application of the BT model to reward modeling is not as straightforward.
+First, the implications of using the BT model in this context are not well-defined in the
+1. Intuition behind this bound can come from the fact that, given the true underlying scores, a quicksort
+algorithm requires O(N log(N)) comparisons on average.
+3
+Hao Sun∗
+, Yunyi Shen∗
+, Jean-Francois Ton
+literature. For instance, if each prompt-response pair is treated as a player, how do we
+characterize the stochastic nature of human annotations as the game results? What assumptions need to be made? The answers to these questions were not elaborated in the
+literature (Christiano et al., 2017; Stiennon et al., 2020; Ouyang et al., 2022; Bai et al.,
+2022a). In the following Section 2.2, we first provide an analysis of the underlying assumptions of applying the BT model to preference-based annotation as a game.
+Besides the implicit assumptions, another challenge arises in the application of BT
+models in reward modeling lies in the comparison sparsity — any given prompt-response is
+compared to another one only once, resulting in far fewer comparisons than in the arena
+setting (i.e., much less than the O(N log(N)) theoretical lower-bound). To understand how
+a single model would handle these seemingly different tasks, we provide an overview of the
+BT model and their variants in Section 2.3.
+2.2 Comprehending the BT Model Application in Preference Annotations
+In the literature, several prior works have challenged the practical application of the BT
+model (Azar et al., 2023; Munos et al., 2023; Tang et al., 2024). While the previous analysis of whether the BT model is a good choice focused on the compatibility between the
+BT model and data (e.g., transitivity (Gardner, 1970), existance of hard decision boundary (Azar et al., 2023; Tang et al., 2024)). In this section, we revisit the basic assumptions
+of modeling human preference annotations with the BT model, and focus on answering the
+following question:
+What are the underlying assumptions when we assume the BT model can be
+used to model the preference annotations?
+The canonical interpretation of how to apply Equation (1) in preference-based learning
+is that: when randomly sampling a human annotator from the population, the human
+annotator’s choice of the preferred response is proportional to the response’s utility value.
+Formally, we use x, y1, y2 to denote the prompt and responses, the above interpretation
+implies the following assumptions:
+Assumption 1 (Existence of Deterministic Oracle Utility Values) The (log-)utility
+value rx,y of any response y given x exists and is deterministic.
+Assumption 2 (Deterministic Comparisons) For annotator A, the annotation result
+is deterministic and depends on the comparison of their biased evaluation of the utility
+values of both responses y1 and y2, such that
+1(y1 ≻ y2|x, A) = 1
+
+rx,y1 + b(x, y1, A) > rx,y2 + b(x, y2, A)
+
+(2)
+The randomness of annotations originates from the bias b associated with annotators. The
+following distributional assumption on b leads to BT model in the annotation process:
+Assumption 3 (Logistic Difference Assumption) The b(x, y1, A)−b(x, y2, A) is sampled i.i.d. from a standard logistic distribution for all x, y:
+P(b(x, y1, A) − b(x, y2, A) ≤ t|A) = 1
+1 + e−t
+(3)
+
+Reward Modeling
+Remark 1 (Transitive property of difference) A reader might be (rightfully) worried if
+this assumption is consistent with transitive property of difference, e.g., when considering
+multiple comparisons we have to have b(x, y1, A) − b(x, y3, A) = b(x, y1, A) − b(x, y2, A) +
+b(x, y2, A) − b(x, y3, A) while knowing sum of (independent) logistic distributions is not logistic. One should be aware that the two terms being summed are not independent and
+the assumption can be achieved by assuming all annotator biases are independently Gumbel
+distributed with the same scale parameter.
+With those assumptions, we arrive at the BT-type model
+Proposition 2 (Modeling Annotations under Logistic Difference Assumption)
+P(y1 ≻ y2|x) = P
+
+rx,y1 − rx,y2 > b(x, y1, A) − b(x, y2, A)
+
+=
+1
+1 + e
+−(rx,y1−rx,y2
+)
+(4)
+While the above assumption on logistic bias differences lead to the BT-type models, it is
+also natural to check other assumptions such as the Gaussian difference assumption and its
+corresponding model:
+Assumption 4 (Gaussian Difference Assumption) The b(x, y1, A)−b(x, y2, A) is sampled from a standard Gaussian distribution:
+b(x, y1, A) − b(x, y2, A) ∼ N (0, 1) (5)
+Proposition 3 (Modeling Annotations under Gaussian Difference Assumption)
+P(y1 ≻ y2|x) = P
+
+rx,y1 − rx,y2 > b(x, y1, A) − b(x, y2, A)
+
+= Φ(rx,y1 − rx,y2
+), (6)
+where Φ is the CDF of the Gaussian distribution.
+To elaborate implications of those different assumptions and provide an alternative perspective to understand those assumptions, we have the following remark:
+Remark 4 (Assumption on Performance in a Game) Assuming the performance of
+players A and B in a game is a Gaussian distribution centered at µA, µB, and the value of
+performance determines which player wins in the game, we have
+P(A wins B) = P (ua ≥ ub) = 1
+2
++
+1
+2
+erf 
+µA − µB
+2σ
+
+, ua ∼ N (µA, σ2
+), ub ∼ N (µB, σ2
+). (7)
+Alternatively, when assuming the performance of players A and B in a game is a Gumble
+distribution located at µA, µB with scale parameter b, and the value of performance determines which player wins in the game, we have
+P(A wins B) = P (ua ≥ ub) = 1
+2
++
+1
+2
+tanh 
+µA − µB
+2b
+
+= σ
+
+µA − µB
+b
+
+, ua ∼ G(µA, b), ub ∼ G(µB, b).
+(8)
+Hao Sun∗
+, Yunyi Shen∗
+, Jean-Francois Ton
+While the latter corresponsds to the BT model, the former is known to be the Thurstonian model (Thurstone, 1927). In the BT model, the tanh(·) rather than the error function
+erf(·) is used, for the sake of a better empirical fit and mathematical convenience (Elo, 1967;
+Glickman, 1995; Glickman and Jones, 1999). In both models, we use a game-dependent notation of the variance terms σ
+2
+, b to characterize the player-agnostic performance variation.
+Those constants can be further absorbed in the utility values.
+It is worth noting that although we derived BT model assuming deterministic game,
+stochastic score from human annotators, it is not the only way to derive this model, one
+can derive the same model assuming the stochasticity in the game and a purely deterministic
+score.
+2.3 BT Regression: How BT Model Works with Sparse Comparisons
+Additionally, estimating a separate r(·) for each prompt-response pair is impractical. In
+typical LLM alignment scenarios, we often have only N/2 comparisons for N pairs, far below
+the theoretical lower bound for consistent estimation (Han et al., 2020). Furthermore, unlike
+the arena setting, there is no clear way to predict the score for a new, unseen pair. However,
+this challenge is not unique to LLM alignment; sports analysts also need to estimate a team’s
+ability before many competitions or predict the ability of a new team. A common approach
+in such cases is to use features or covariates, such as team composition or funding status,
+to predict scores. For LLM, one could have sentence embeddings as such covariates.
+These extensions of the BT model on regression settings were explored shortly after its
+original introduction: Springall (1973) assumed that r(·) could be expressed as a linear combination of covariates. In this scenario, the problem reduces to a classic logistic regression
+on the difference between two sets of covariates. This allows us to predict the score for a
+new team or prompt-response pair based on its covariates before any comparisons are made.
+More complex nonlinear models such as spline models have also been explored (De Soete
+and Winsberg, 1993). For a more comprehensive review from a statistical perspective, we
+refer readers to Cattelan (2012).
+In practice, reward modeling in LLM alignment often employs neural networks, with
+multilayer perceptrons (MLPs) being a common choice to map embeddings to scores. However, there is currently no theoretical justification for why this particular choice of model
+and loss function is effective for learning reward functions. From a theoretical standpoint,
+this model variant can be viewed as a nonparametric logistic regression problem (Bockenholt, 1988; Schmidt-Hieber, 2020) with additional structural assumptions on the network,
+and our analysis builds on this framework. In the following section, we establish the asymptotic theory for learning reward models using MLPs and BT loss. Table 1 summarizes the
+key differences between the two usages.
+2.4 Asymptotic Theory on MLP-based BT Regression in Reward Modeling
+In preference-based LLM alignment, we work with the dataset under the form of Dpref =
+{(xi
+, y1,i, y2,i, hi)}i∈[n]
+, where each tuple consists of the prompt xi
+, the corresponding responses y1,i and y2,i sampled from the LLM ℓ to be aligned y1,i, y2,i ∼ ℓ(xi), and the
+human-annotated preference hi
+, being 1 if y1,i is preferred and −1 otherwise.
+6
+Reward Modeling
+Table 1: Comparison of the BT model usage in LLM Arena and Reward Modeling.
+Usage LLM Arena BT Reward Modeling
+Objective Direct Parameter Estimation Model Parameterization
+Prediction Not needed Needed
+Number of Comparisons Sufficient (1.7M for N = 130) Very Sparse (N/2)
+Usage of BT Model Classical BT BT-Regression
+Requirement at least O(N log(N)) Comparisons Covariates
+Assume we have a known embedding function Ψ(·, ·) : X × Y 7→ [0, 1]d
+, such that there
+exists an unknown reward function r : R
+d
+7→ R, and can be expressed as r(Ψ(x, y)) for all
+x, y. Without loss of generality, we assume the embeddings are scaled within the range [0, 1]
+— otherwise, we can scale the embeddings into this range. Under this framework, reward
+modeling reduces to learning the function r. Note that under this formalism there is no
+need for a comparison to have the same prompt. We will empirically explore the effects of
+using cross-prompt and same-prompt in our experiment section.
+Denote our reward model as ˆrθ, parameterized by θ, when there is no confusion, we
+will abbreviate it as ˆr. We denote the vector of two rewards as rˆ and the class probability
+is then softmax(rˆ). Thus, training this reward model reduces to training a classifier with
+a cross-entropy loss, where the predicted conditional class probabilities are computed as
+softmax(ˆr(Ψ(x1, y1)), rˆ(Ψ(x2, y2))). Our theoretical analysis follows closely the work of Bos
+and Schmidt-Hieber (2022) and Schmidt-Hieber (2020). In this setting, we consider a special
+case of a model that preserves anti-symmetry: if we exchange the roles of x1, y1 with x2, y2,
+the reward difference becomes negative.
+We demonstrate that an MLP can approximate the probability that the first pair is
+preferred over the second, and subsequently show that this approach enables the model
+to learn the underlying reward function effectively. For notational simplicity, let Ψ
+(i)
+1
+and
+Ψ
+(i)
+2
+represent the embeddings of the i-th pair, where i = 1, . . . , n. Without loss of generality, we assume Ψ
+(i)
+· ∈ [0, 1]d
+. Let the true preference probability for the i-th pair be
+p
+(i)
+0
+, and the predicted probability be pˆ
+(i) = (σ(ˆr
+∆(Ψ
+(i)
+1
+, Ψ
+(i)
+2
+)), 1 − σ(ˆr
+∆(Ψ
+(i)
+1
+, Ψ
+(i)
+2
+))) =
+softmax(rˆ(Ψ
+(i)
+1
+, Ψ
+(i)
+2
+)). The preference label h
+(i)
+equals (1, 0) if the first response pair is
+preferred, and (0, 1) otherwise. In this way, the BT model can be reduced to a pairwise
+classification problem, where the likelihood is given by:
+LeCE(p) = −
+1
+n
+Xn
+i=1
+(h
+(i)
+)
+⊤ log(p
+(i)
+), pˆ = arg min
+p∈Fθ
+LeCE(p) (9)
+It is unrealistic to assume we can find an NN that actually attends the global minimum, we
+denote the difference between the fitted NN and the global minimum as
+∆n(p0, pˆ) = E
+
+LeCE(pˆ) − min
+p∈Fθ
+LeCE(p)
+
+(10)
+We consider the truncated KL risk following Bos and Schmidt-Hieber (2022) to overcome
+the divergence problem of KL risk.
+7
+Hao Sun∗
+, Yunyi Shen∗
+, Jean-Francois Ton
+Definition 5 (Truncated KL risk (Bos and Schmidt-Hieber, 2022)) The B−truncated
+KL risk for a probability estimator pˆ
+RB(p0, pˆ) = E
+
+p
+⊤
+0 min 
+B, log p0
+pˆ
+ (11)
+Our main theorem establishes that, with regularity assumptions on the true reward function,
+an MLP reward model can accurately predict preference probabilities, as measured by
+truncated KL risk.
+Theorem 6 (Truncated KL risk bound, informal) Suppose the true utility function
+induced probability of preference satisfies smoothness and regularity assumptions detailed in
+Assumption 7 with smoothness characterised by constant β and regularity characterised by
+constant α with dimension of embedding being d. Let pˆ be an estimator from the family
+of MLP satisfying regularity assumptions detailed in Assumption 6 with depth L. Define
+ϕn := 2
+(1+α)β+(3+α)d
+(1+α)β+d n
+−
+(1+α)β
+(1+α)β+d For sufficiently large n, there exists constants C
+′
+, C′′ such
+that when ∆n(ˆp, p0) ≤ C
+′′BϕnLlog2
+(n) then
+RB(p0, pˆ) ≤ C
+′BϕnLlog2
+(n) → 0 (12)
+A detailed formal statement and proof are given as Theorem 20 in the appendix.
+Corollary 7 (Connecting probability to reward) Given that (
+√
+a−
+√
+b)
+2 = (a−b)
+2/(
+√
+√
+a+
+b)
+2
+, we can apply Theorem 21 to demonstrate that in a large subset of the embedding space,
+
+p0(Ψ1, Ψ2) − pˆ(Ψ1, Ψ2)
+
+ ≲
+
+
+√
+p0 +
+p
+pˆ
+
+
+p
+ϕnLlog(n) → 0 (13)
+
+r(Ψ1) − r(Ψ2) − (ˆr(Ψ1) − rˆ(Ψ2))
+
+ ≲
+
+√p0 +
+√
+pˆ
+
+
+p˜(1 − p˜)
+p
+ϕnLlog(n) → 0 (14)
+where p˜ is a probability between p0 and pˆ, the second line is due to mean value theorem.
+a ≲ b means there exists some constant C s.t. a ≤ Cb and a ≍ b means a ≲ b and b ≲ a.
+This indicates that the comparison should be between those pairs that are relatively close in
+reward to avoid diverging behavior of the logit function.
+Formal proofs and detailed theoretical analyses are provided in Appendix A.
+Takeaway Message In this section, we theoretically proved that with sufficient number
+of annotated comparisons in the embedding space, the BT reward model estimation converges
+to the real reward value up to an additive constant.
+3 Rethinking Reward Modeling Objectives in LLM Alignment
+Practical implementation of the BT model poses several requirements including the paired
+data, the specially designed anti-symmetric model structure, and the inherent assumptions
+of the BT model itself. This leads us to question whether we can have alternative approaches
+to reward modeling. To address this, it is helpful to pause and reflect on the essential
+requirements of a reward model in LLM alignment. Our data consists of binary preferences,
+8
+Reward Modeling
+representing the relative ranking between two prompt-response pairs. We can view this as
+a form of binary classification, with the ultimate goal being to learn a continuous score for
+optimization. While the Bradley-Terry model serves this purpose through its log-likelihood
+loss and anti-symmetric structure, we now consider whether these formal elements are
+indispensable and explore possible simplifications.
+3.1 The Unified Target of Order Consistency
+In basic binary classification, we prioritize accuracy over modeling output probabilities
+precisely. For example, neural classifiers, despite being overconfident (Guo et al., 2017),
+are widely used for their accuracy. Similarly, we do not have to require the reward
+model to predict comparison probabilities accurately as in BT, but rather to
+provide a reliable signal for ranking LLM outputs at inference.
+Since our goal is response optimization using a reward proxy, it is sufficient to learn
+the reward function up to a monotonic transformation. While this might alter preference
+probabilities, it won’t affect optimization results. To this end, the learned reward function
+rˆ only needs to satisfy the following condition: for any two distinct prompt-response pairs
+(x1, y1) and (x2, y2) (note that we do not preclude x1 = x2), we require that (ˆr(x1, y1) −
+rˆ(x2, y2))(r(x1, y1) − r(x2, y2)) > 0. In other words, the learned reward function must
+preserve the ordering as the true reward function.
+This condition implies the existence of a strictly monotonic increasing function h such
+that ˆr(·) = h(r(·)). Such an equivalence is sufficient for optimizing the reward in settings
+such as sampling-based optimization, and contextual bandits (Agarwal et al., 2014; Lattimore and Szepesv´ari, 2020). Ideally, if we have access to the ground truth ordering, we can
+define h = sign(r(x1, y1)−r(x2, y2)). If we can (1) construct a model Hˆ : X × Y × X × Y 7→
+{+1, −1} that predicts the correct ordering with high accuracy (i.e., Hˆ is order consistent),
+and (2) map this ordering into a continuous value, then we can meet the requirements for
+downstream optimization. That is, an ideal goal for the order model is to achieve
+Hˆ (r(x1, y1) − r(x2, y2)) > 0 (15)
+However, Equation (15) cannot be directly evaluated because the true reward was never
+observed and observed ordering from the human annotator is often subject to noise. Drawing
+on insights from the psychological bottleneck literature (Stewart et al., 2005; Guest et al.,
+2016), it is reasonable to assume that when the true underlying scores of two responses are
+similar, it becomes more difficult for annotators to distinguish between them. Formally, we
+have
+Assumption 5 (Imperfect Preference Annotation in Approximating True Scores)
+Denote the true utility difference ∆r := |r(x1, y1) − r(x2, y2)|, and the annotator function
+h(x1, x2, y1, y2) provides feedback that probabilistically aligns with the oracle utility r(x, y).
+We will assume it is harder for them to assign correctly when the reward difference between
+two pairs is ∆r according to:
+P
+
+h(x1, x2, y1, y2)(r(x1, y1) − r(x2, y2)) > 0
+
+
+
+
+∆r
+
+= ξ(∆r), (16)
+9
+Hao Sun∗
+, Yunyi Shen∗
+, Jean-Francois Ton
+where r is the unknown oracle utility function, and ξ(·) any monotonic increasing function
+to [0.5, 1].
+Note that both BT and Thurstonian models satisfy this assumption and can be seen as
+special cases. With those noisy annotations, the best we can consider is an order consistent
+with the noisy ordering:
+Definition 8 (Order Consistency) We consider the loss over an ordering model Hˆ
+Loc(ˆr) = Ex1,x2,y1,y2,h1
+h
+h = Hˆ
+i
+(17)
+That is, the probability that a reward model ordering agrees with annotation.
+We show with the following proposition that minimizing this (observable) loss would help
+us achieve order consistency with true reward function Equation (15) with high probability:
+Proposition 9 (Lower bound on population level order consistency) Suppose a
+learned model Hˆ achieves objective equation 17 up to 1 − δϵ error for some small 0 < δ < 1
+and ϵ < 3/20, i.e.,
+Ex1,x2,y1,y2,h1
+h
+h = Hˆ
+i
+≥ 1 − δϵ (18)
+Then, with probability at least 1 − δ over ∆r, for any given ∆r the order consistency of rˆ
+with respect to the oracle utility is bounded below by:
+Ex1,x2,y1,y2
+
+1
+
+Hˆ · [r(x1, y1) − r(x2, y2)] ≥ 0
+
+
+
+
+
+∆r
+
+≥ (1 − ϵ) · ξ
+2
+(∆r) + ϵ · (1 − ξ(∆r))2
+(19)
+Further if we assume that with probability at least 1 − κ, that ξ(∆r) ≥
+√
+ϵ
+2 + 1 − 3ϵ + ϵ, we
+have
+Ex1,x2,y1,y2∼ℓ(x)
+h
+1
+
+Hˆ · [r(x1, y1) − r(x2, y2)] > 0
+i ≥ 1 − 4ϵ − κ − δ (20)
+Note that, in analogy to a classic classification problem, Equation (17) correspond to
+classification accuracy while the BT model attempted to have not only accuracy but also calibrated conditional class probability, a potentially harder problem, and a cross-entropy loss
+is almost necessary. Indeed in classical classification problems, accuracy is often optimized
+indirectly using losses like cross-entropy but not restricted to this particular choice. This
+hints at us applying techniques for improving prediction accuracy to improve reward modeling even if the techniques cannot provide a calibrated probability. While the BT model uses
+cross-entropy loss and an antisymmetric structure, in the following, we show an alternative
+choice that could lead to a simple classification-based algorithm.
+Takeaway Message With the above theorem, we show that we can optimize the order
+consistency between reward estimators and the annotation dataset — such that the order
+consistency between the reward estimator and the golden reward values is also optimized.
+10
+Reward Modeling
+3.2 The BT Model as a Choice
+The BT model is designed to enforce order consistency in the following way: it models the
+probability that h = 1 using σ(ˆrBT(x1, y1) − rˆBT(x2, y2)), where σ is the sigmoid function.
+This allows training with a binary cross-entropy loss:
+LBT = E [1h=1σ(ˆrBT(x1, y1) − rˆBT(x2, y2)) + 1h=−1(1 − σ(ˆrBT(x1, y1) − rˆBT(x2, y2)))] (21)
+This structure guarantees that flipping the comparison order will also flip the prediction.
+3.3 Relaxing the Anti-Symmetry Constraint: a Classification-based Method
+BT’s difference-in-reward structure inherently enforces antisymmetry. To better understand
+this, consider an order model Hˆ that outputs a preference vector for both prompt-response
+pairs, i.e., Hˆ := (Hˆ
+1, Hˆ
+2), where Hˆ
+1, Hˆ
+2 : X × Y 7→ {1, −1} and ideally align with (h, −h).
+The BT model imposes a hard constraint such that Hˆ
+1 = −Hˆ
+2. With sufficient data,
+instead of explicitly enforcing this constraint, the structure could be learned implicitly by
+ensuring order consistency, i.e., Hˆ
+1 ≈ h and Hˆ
+2 ≈ −h. Consider a single model e.g.,
+a neural network or tree Hˆ
+clf. Under this construction, the order consistency could be
+written as Loc := E(h = Hˆ
+clf(x1, y1) ∧ −h = Hˆ
+clf(x2, y2)), we could train a model targeting
+on predicting these two parts separately, and if the model predicts well, it should satisfy
+the antisymmetry constraint. A union bound of order consistency is
+Loc ≤ Lclf := E(h = Hˆ
+clf(x1, y1)) + E(−h = Hˆ
+clf(x2, y2)) (22)
+instead of directly enforcing order consistency, we can use the classification accuracy of
+each prompt-response pair as a surrogate. In practice, this means training a classifier by
+treating the annotations and prompt-response pairs independently. Then the logit can be
+used as a proxy for the reward model. For an alternative perspective: instead of learning
+the joint probability P(i ≻ j) that depends on both players i and j, we focus on learning the
+marginal probability P(i wins). These two are related via Jensen’s inequality, with further
+details provided in Proposition 24.
+Takeaway Message In this section, we introduce the classification-based reward models,
+and their prediction of reward scores are upper bounds of the BT reward model scores. They
+can be interpreted as logits of marginalized probabilities of winning randomized comparisons.
+4 Rethinking the Preference Annotation Process for Reward Modeling
+In both BT and classification-based reward modeling, there is no theoretical requirement
+to limit comparisons to the same prompts. For classification models, this is straightforward, as they do not rely on paired data at all. Similarly, in traditional BT applications,
+random pairwise comparisons among players are common. This further motivates our investigation into how randomized comparisons across different prompts affect reward modeling
+performance.
+To further motivate the usage of cross-prompt comparison, we introduce the following
+notation on annotation quality and analysis as a case study under a Gaussian assumption
+on score distributions. In equation 16, we consider a special case of ξ in equation 16 to
+11
+Hao Sun∗
+, Yunyi Shen∗
+, Jean-Francois Ton
+be ξ(·) = σ(β·), that the annotators’ ability is characterized by β. When β = 0, we have
+random annotations:
+P
+
+h(x1, x2, y1, y2)(r(x1, y1) − r(x2, y2)) > 0
+
+
+
+
+∆r
+
+= σ(β∆r)
+β−→0
+−−−→ 0.5, (23)
+and when β → ∞, we have perfect annotations:
+P
+
+h(x1, x2, y1, y2)(r(x1, y1) − r(x2, y2)) > 0
+
+
+
+
+∆r
+
+= σ(β∆r)
+β−→∞
+−−−−→ 1. (24)
+In a nutshell, the annotator’s abilities and the differences among prompt-response pairs
+together determine how much preference is correctly labelled in the annotation. In the
+following, we show a special case when two responses of a prompt x are randomly sampled
+from a single LLM ℓ.
+Example 1 (Annotation Quality under Gaussian Score) When data for pairwise annotation is generated through random sampling of two responses y1, y2 ∼ ℓ(x), we further
+assume the utility of those two responses are sampled from a Gaussian distribution with
+variance σ
+2
+x
+, i.e., y ∼ ℓ(x), r(x, y) ∼ N (µx, σ2
+x
+). Then the annotation quality Qpair(x) on
+such a prompt can be defined as the averaged annotation order consistency:
+Qpair(x) = Ey1,y2|x[τx] = Ey1,y2|x [σ(β|r(x, y1) − r(x, y2)|)] (25)
+where τx = σ(β|r(x, y1) − r(x, y2)|) is a random variable (over y1, y2) and the probability
+density function of τx is
+fτx|x(t) = 1
+p
+πβ2σ
+2
+x
+exp
+
+−
+
+log 
+t
+1−t
+2
+4β
+2σ
+2
+x
+
+ ·
+1
+t(1 − t)
+(26)
+The derivation is provided in Appendix C.1. In this special case, it is easy to get some
+numerical results: when β
+2σ
+2
+x = 1, we have Qpair ≈ 0.6749, e.g., roughly 67.5% of data
+are correctly labelled by annotators. Similarly, when β
+2σ
+2
+x = 2, Qpair ≈ 0.7251; when
+β
+2σ
+2
+x = 4, Qpair ≈ 0.7781; when β
+2σ
+2
+x = 10, Qpair ≈ 0.8428; This suggests that the effect of
+better annotators and the effect of response utility diversity are always coupled: in order to
+improve data quality, we may either improve the ability of annotators or further diversify
+the generation utilities — as both of those parameters control the annotation quality.
+Next, we show that cross-prompt comparison in this example can be an effective practice
+to increase response utility diversity. And show that cross-prompt annotation can improve
+annotation quality.
+Cross-Prompt Annotation Improves Quality under Gaussian Score When considering multiple prompts xi
+, i = 1, 2, ..., N, we denote the corresponding responses as yi
+,
+and scores r(xi
+, yi) ∼ N (µi
+, σ2
+i
+). In the following, we show that cross-prompt annotation
+can improve annotation quality.
+Proposition 10 (Cross-Prompt Comparisons Increase Utility Diversity) When
+data for pairwise annotation is generated through random sampling of two responses y1, y2 ∼
+12
+Reward Modeling
+ℓ(x), and the utility of those two responses are sampled from a Gaussian distribution with
+variance σ
+2
+x
+, i.e., y ∼ ℓ(x), rx,y ∼ N (µx, σ2
+x
+), when there are multiple prompts x, we have
+ExEy1,y2|x [|rx,y1 − rx,y2
+|] ≤ Ex1,x2Ey1|x1,y2|x2
+[|rx1,y1 − rx2,y2
+|] (27)
+The proof is provided in Appendix C.2. This gives us an intuitive result that, in expectation, the reward differences between cross-prompt comparisons are larger than the reward
+differences between prompt-response pairs sharing the same prompt.
+More generally, cross-prompt comparisons improve data quality when the utility distribution of different randomly sampled responses given a single prompt is unimodal and
+symmetric (e.g., Gaussian).
+Theorem 11 (Cross-Prompt Annotation Improves Annotation Quality) When
+data for pairwise annotation is generated through random sampling of two responses y1, y2 ∼
+ℓ(x), and the utility of those two responses are sampled from a location-scale family with
+probability density function gx(x) = f((x − µx)/σx) for f being unimodal and symmetric to
+0. For any ξ : R+ → [1/2, 1], first order differentiable, monotone increasing and concave,
+we have
+Ex[Qpair(x)] = ExEy1,y2|x [ξ(|rx,y1 − rx,y2
+|)]
+≤ Ex1,x2Ey1|x1,y2|x2
+[ξ(|rx1,y1 − rx2,y2
+|)] := Ex1,x2
+[Qcross−prompt(x1, x2)].
+(28)
+In the above equation, Qcross−prompt(x1, x2) is defined slightly different from Qpair(x)
+which only takes one prompt as its input. We can understand Qpair(x) as a special case
+of Qcross−prompt(x1, x2) when x1 = x2 = x. Theorem 11 highlights that cross-prompt
+comparisons improve annotation quality for a broad class of utility distributions and ξ.
+The proof is provided in Appendix C.3.
+Takeaway Message In this section, we highlighted the theoretical superiority of using
+cross-prompt comparisons in preference annotations. In expectation, cross-prompt comparisons
+can improve annotation quality since they increase the expected differences between promptresponse pairs.
+5 Related Work
+5.1 The Bradley-Terry Model in RLHF
+Hark back to the seminal paper on RLHF (Christiano et al., 2017), the motivation for using
+the Bradley-Terry-type model is to understand it as a specialization of the Luce-Shephard
+choice rule (Luce, 1959; Shepard, 1957). In a simplified version of the two-option setting,
+the Luce-Shephard choice rule says the probability of choosing a particular option from a
+set of alternatives is proportional to the utility assigned to that option. The application of
+such a rule is well aligned with the Bradley-Terry model (Bradley and Terry, 1952) where
+pairwise comparisons between players can be used to estimate their ability (utility) scores,
+where a game is inherently stochastic while the ability of a player is fixed. In later work of
+alignment from human feedback (Stiennon et al., 2020; Ouyang et al., 2022; Rafailov et al.,
+13
+Hao Sun∗
+, Yunyi Shen∗
+, Jean-Francois Ton
+2023), such a model is directly applied and has achieved great success in improving the
+quality of LLMs in various tasks when direct evaluation is impossible.
+The challenges of using BT models in RLHF have been discussed in the literature from
+different perspectives (Azar et al., 2023; Tang et al., 2024; Zhao et al., 2023): Munos et al.
+(2023) points that the BT model can not capture non-transitive preferences, and maximizing
+the corresponding Elo score can be a different objective as compared to the objective of
+optimizing preferences. Azar et al. (2023) points out that using the BT modelization in
+the direct preference optimization methods (Rafailov et al., 2023) could lead to problematic
+overfitting when sampled preferences are deterministic. Instead of putting conditions on
+the data’s property and discussing counterexamples when BT models can certainly fail, in
+our work, we revisited the foundations of the BT models in reward modeling and focused
+on explaining under what assumptions could it be correct. Our work provides positive
+results of the BT models through formal justifications. Furthermore, we introduce the
+order consistency objective and the classification-based reward modeling methods as more
+flexible and compatible alternatives.
+5.2 Bradley-Terry Model for Parameter Estimation and Prediction
+The most classic Bradley-Terry model suitable for arena setting has been extensively studied
+theoretically started by Bradley and Terry (1952) themselves. Ford Jr (1957) established
+identifiability and asymptotic theory. More recently Wu et al. (2022) compared asymptotic
+theory under different identifiability assumptions. Simons and Yao (1999) studied BradleyTerry when the number of players diverged under the assumption that the number of competitions each player played also diverged. In contrast Han et al. (2020) studied the setting
+when comparisons are sparse and proposed a consistent procedure needs only O(N log3
+(N))
+comparisons. On the prediction side, using features to predict ability was explored soon
+after Bradley and Terry (1952), Springall (1973) assumed ability was a linear combination
+of features while De Soete and Winsberg (1993) used spline functions. Bockenholt (1988)
+cast Bradley-Terry as a special logistic regression problem and opened investigation from
+this len. Chen and Pouzo (2012) developed theory for a general class of nonparametric models including logistic regression. On the deep learning side Schmidt-Hieber (2020) studied
+asymptotic theory on deep neural networks for nonparametric regression and a follow-up
+paper Bos and Schmidt-Hieber (2022) studied nonparametric logistic regression using deep
+neural net. However, these theories cannot be directly applied to the Bradley-Terry model
+because we need a unique reward model for all prompt-response pairs and the probability is
+not arbitrary but soft max from passing two pairs to a single network. Studies like Bos and
+Schmidt-Hieber (2022) could be seen as two pairs passing two arbitrary neural networks
+rather than one.
+5.3 Non-Pairwise Data and Cross-Prompt Comparisons in RLHF
+Alignment from non-pairwise data (Liu et al., 2022; Sun and van der Schaar, 2024; Ethayarajh et al., 2024) and cross-prompt comparisons (Yin et al., 2024) were explored in the
+literature. The KTO (Ethayarajh et al., 2024) is rooted in prospect theory (Tversky and
+Kahneman, 1992) that risk-averse human prospective theories assign different values to
+losses and gains. And RPO (Yin et al., 2024) proposed to reflect the complex nature of
+14
+Reward Modeling
+human learning in alignment through involving response comparisons among both identical
+and similar questions. On one hand, RPO supports our insight into making cross-prompt
+comparisons in practice by drawing inspiration from human learning. On the other hand,
+the motivations and implementations between our work and RPO are both different: in
+our work, the cross-prompt annotation practice is motivated by a “why not” observation
+— given the fact that there is no specialty of considering single-prompt comparisons in our
+order-consistency theory and the BT model for predictions. Besides different motivations,
+there are several significant differences between RPO and our cross-prompt comparison:
+RPO does not study the annotation efficiency, or what is the optimal way of doing annotation under a budget, yet our focus is on studying the cross-prompt annotation as an
+alternative way of doing annotations. Moreover, RPO considers a strategic re-weighting
+method based on embedding space similarity among responses, leading to a direct alignment method. All of those works are direct alignment methods (Zheng et al., 2024; Liu
+et al., 2024; Zhao et al., 2023; Azar et al., 2023; Ethayarajh et al., 2024), which do not
+explicitly build reward models as their intermediate steps. One potential drawback of those
+methods without explicit reward models is that it will be challenging or impossible to conduct inference-time optimization (Liu et al., 2023; Sun, 2023; Sun et al.) — especially when
+compared with our embedding-based light-weighted reward models. And recent work has
+demonstrated the superiority of two-stage methods over direct alignment methods (Ivison
+et al., 2024).
+5.4 Representation Learning in Reward Modeling
+In our work, we separate the reward model learning from the representation learning task
+and focus only on the reward modeling part to isolate the source of gains better. Recent
+advances in generative reward models highlight that generation tasks can be used to regularize the learned embeddings and improve reward modeling performance (Yang et al.,
+2024a). Also in Zhang et al. (2024), the generative verifiers construct reward predictions
+through next-token prediction to maximally leverage the ability of LLM as token generators
+to improve their evaluation ability. While our research on the reward models is orthogonal to this line of research, future exploration on combining either embedding learning or
+the generative ability of LLMs with different order consistency objectives could be highly
+promising directions to enjoy the improvements from both sides.
+6 Experiments
+Objectives of Experiments In this section, we present empirical results to validate our
+key insights and methodological contributions. We begin by elaborating on our high-level
+design motivations for experiments. We aim to address the following questions:
+1. How effective are different learning objectives given by the order consistency framework?
+Specifically, how does the performance of a classification-based model compare to the
+widely used BT model in reward modeling? (Section 6.1)
+2. How do various reward modeling methods perform as annotation quality and availability
+changes? (Section 6.2)
+15
+Hao Sun∗
+, Yunyi Shen∗
+, Jean-Francois Ton
+3. How good is the cross-prompt comparison in annotations? What is essential in determining whether this annotation design is beneficial or not in practice when it is available?
+(Section 6.3)
+Key Design Principles: Reproducibility, Controllability, and Computational Efficiency Our experiments are designed with three key desiderata in mind: high reproducibility, controllability to enable diverse ablation studies and computational efficiency.
+We prioritized these principles in all aspects of our experimental setup:
+• Base Models. We conducted experiments using three open-source LLMs at different
+scales: Gemma2b, Gemma7b, and LLaMA3-8b (Team et al., 2024; Meta, 2024), alongside
+their SFT-ed versions (Gemma2b-SFT, Gemma7b-SFT, LLaMA3-8b-SFT), following the
+setup in Stiennon et al. (2020). Details are provided in Appendix D.
+• Annotations. To ensure controllability in generation and annotation, and closely simulate human annotation processes, we followed approaches from Gao et al. (2023); Liu
+et al. (2023); Tran and Chris Glaze (2024); Dong et al. (2024) to utilize open-source
+golden reward models as annotators to maintain affordability for the community.
+• Datasets. We used the Anthropic-Harmless and Anthropic-Helpful datasets (Bai
+et al., 2022a), as these are extensively studied in the context of reward modeling, and
+open-source golden reward models are available (Yang et al., 2024b; Dong et al., 2023,
+2024).
+• Evaluation of Learned Reward Models. We evaluated the effectiveness of different
+reward models using Best-of-N (BoN) sampling following Gao et al. (2023). This choice
+was driven by three key considerations:
+– (1) Performance: Empirical studies show BoN achieves better performance than PPO
+(Dong et al., 2023; Yuan et al., 2023; Gao et al., 2023; Coste et al., 2023).
+– (2) Stability and Reduced Engineering Overhead: BoN requires no hyperparameter
+tuning and is more stable than PPO, leading to more consistent and interpretable
+results (Ivison et al., 2024; Xu et al., 2024).
+– (3) Computational Efficiency and Reproducibility: BoN’s reusability across N generations during test time makes it more computationally efficient compared to policygradient optimizations (Li et al., 2023; Stiennon et al., 2020). In contrast, using
+PPO (Schulman et al., 2017) for our 12,000 experimental setups would be computationally prohibitive since each setup requires distinct LLM fine-tuning.
+For more details on experiment setup, please refer to Appendix D.
+6.1 Comparing The Bradley-Terry and Classification Objectives
+Experiment Setups. In this section, we compare reward models trained with different
+learning objectives — the BT model and the Classification model — as well as their different implementations. For the BT model, the Siamese structure (Bromley et al., 1993)
+is required, making MLP the only viable backbone implementation (denoted in the plots
+as BT-MLP). For a fair and clear comparison to BT and to isolate the source of gains
+from implementation, we implement the classification model with both MLP (denoted in
+the plots as CLF-MLP) and the LightGBM (Ke et al., 2017) (denoted in the plots as
+CLF-LGB) given its wide success in machine learning applications (Bent´ejac et al., 2021)
+and especially its successful application in embedding-based reward modeling (Sun et al.,
+16
+Reward Modeling
+Figure 1: Comparison between BT and Classification reward models. In general, the classification
+reward models achieve better performance than the BT reward models, with the added flexibility of
+using off-the-shelf classifiers beyond MLPs. Error bars are given by 5 runs with different seeds.
+2023). We evaluate those reward models using BoN with N=500, reporting improvements
+over base models to provide a clear comparison of their performance.
+Results and Takeaways. Figure 1 presents the results on both datasets. The x-axis
+shows different base models, and the y-axis shows the improvement on golden reward
+values on test prompts using BoN (i.e., the relative performance gains achieved through
+the reward models). The results indicate that classification-based reward models not only
+perform better than the BT reward models but also offer greater flexibility by allowing
+the use of diverse off-the-shelf machine learning algorithms. This makes them a competent
+alternative to BT models in reward modeling.
+6.2 How Annotation Qualities and Quantities Affect Performance
+0.1 0.2 0.3
+Annotation Error Rate
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+Golden Reward Values
+Gemma2b
+0.1 0.2 0.3
+Annotation Error Rate
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+Gemma2b-SFT
+0.1 0.2 0.3
+Annotation Error Rate
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+Gemma7b
+0.1 0.2 0.3 0.4
+Annotation Error Rate
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+Gemma7b-SFT
+0.1 0.2 0.3
+Annotation Error Rate
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+LLaMA3-8b
+0.1 0.2 0.3 0.4
+Annotation Error Rate
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+LLaMA3-8b-SFT
+BT-MLP
+CLF-MLP
+CLF-LGB
+0.1 0.2 0.3 0.4
+Annotation Error Rate
+2
+3
+4
+5
+6
+7
+8
+9
+Golden Reward Values
+Gemma2b
+0.1 0.2 0.3
+Annotation Error Rate
+2
+3
+4
+5
+6
+7
+8
+9
+Gemma2b-SFT
+0.1 0.2 0.3 0.4
+Annotation Error Rate
+2
+3
+4
+5
+6
+7
+8
+9
+Gemma7b
+0.1 0.2 0.3
+Annotation Error Rate
+2
+3
+4
+5
+6
+7
+8
+9
+Gemma7b-SFT
+0.1 0.2 0.3 0.4
+Annotation Error Rate
+2
+3
+4
+5
+6
+7
+8
+9
+LLaMA3-8b
+0.1 0.2 0.3 0.4
+Annotation Error Rate
+2
+3
+4
+5
+6
+7
+8
+9
+LLaMA3-8b-SFT
+BT-MLP
+CLF-MLP
+CLF-LGB
+Figure 2: Changing the annotation quality. Dataset: Harmless, Helpful.
+Experiment Setups. In this section, we systematically vary both the quality and quantity of annotations to empirically assess the performance of different reward models under diverse conditions. For annotation quality, we use the sigmoid instantiation of equation 16, i.e., ξ(∆r) = σ(β∆r), and vary the annotation quality parameter β over the range
+17
+Hao Sun∗
+, Yunyi Shen∗
+, Jean-Francois Ton
+10000 20000 30000 40000
+# Training Annotations
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+Golden Reward Values
+Gemma2b
+10000 20000 30000 40000
+# Training Annotations
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+Gemma2b-SFT
+10000 20000 30000 40000
+# Training Annotations
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+Gemma7b
+10000 20000 30000 40000
+# Training Annotations
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+Gemma7b-SFT
+10000 20000 30000 40000
+# Training Annotations
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+LLaMA3-8b
+10000 20000 30000 40000
+# Training Annotations
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+LLaMA3-8b-SFT
+BT-MLP
+CLF-MLP
+CLF-LGB
+10000 20000 30000 40000
+# Training Annotations
+2
+4
+6
+8
+Golden Reward Values
+Gemma2b
+10000 20000 30000 40000
+# Training Annotations
+2
+4
+6
+8
+Gemma2b-SFT
+10000 20000 30000 40000
+# Training Annotations
+2
+4
+6
+8
+Gemma7b
+10000 20000 30000 40000
+# Training Annotations
+2
+4
+6
+8
+Gemma7b-SFT
+10000 20000 30000 40000
+# Training Annotations
+2
+4
+6
+8
+LLaMA3-8b
+10000 20000 30000 40000
+# Training Annotations
+2
+4
+6
+8
+LLaMA3-8b-SFT
+BT-MLP
+CLF-MLP
+CLF-LGB
+Figure 3: Changing the annotation quality. Dataset: Harmless, Helpful.
+[0.5, 0.7, 1.0, 3.0, 5.0, 10.0], using a fixed set of 40000 annotations for training. These β
+values correspond to annotation error rates ranging from 5% to 38%, which aligns with
+realistic human annotations (Zheng et al., 2023; Coste et al., 2023; Dubois et al., 2024).
+To explore the impact of annotation quantity, we experiment with datasets containing
+[5000, 10000, 20000, 40000] annotations, while holding β = 1 constant. Additional results
+cross-sweeping those two set-ups can be found in Appendix E.
+Results and Takeaways. Figure 2 presents the results of varying annotation quality.
+From the plots, it is evident that as annotation error rates increase, the classification models
+exhibit greater robustness compared to the BT models, experiencing smaller performance
+drops. On the other hand, the BT models outperform classification models when annotation
+quality is high (i.e., less than 10% wrong labels). Figure 3 shows the results of varying
+annotation quantities. We can conclude from the results that the classification models
+consistently outperform BT models, not only delivering superior performance with the same
+number of annotations but also demonstrating more consistent improvements as the number
+of annotations increases.
+6.3 LLM Alignment with Preference Annotations Between Different Prompts
+Experiment Setups. In this section, we examine how cross-prompt comparisons, as opposed to annotations on the same prompt, affect the performance of different reward models.
+Specifically, for each training prompt, two responses are randomly generated by the LLMs
+and then presented to annotators (the golden reward model) for preference labeling. In the
+standard reward modeling setup, the annotators label response pairs generated from the
+same prompt. In the cross-prompt annotation setup (denoted by the postfix X-Prompt in
+the legends), we randomly select two prompt-response pairs from the dataset for comparison
+and annotation. We present the results with β = 1 in the preference annotation processes
+and 40000 pairs of annotations in our main text as the most common setting. We provide
+full results over other experimental configurations in Appendix E.
+Results and Takeaways. Figure 4 shows the results across 2 datasets, 6 base models, and 3 different reward modeling methods. Shaded plots represent results from cross18
+Reward Modeling
+Figure 4: Results comparing cross-prompt comparison based annotations. Preference annotations
+on cross-prompt comparisons outperform same-prompt comparisons.
+prompt comparisons. The y-axis measures golden reward value improvements achieved
+through BoN sampling using the respective reward models. From these results, it is clear
+that cross-prompt comparisons outperform same-prompt comparisons, offering substantial
+improvements in reward model performance.
+Figure 5: Results comparing cross-prompt comparison-based annotations on synthetically generated
+similar or diversified comparison pairs. Cross-prompt comparison significantly improves the performance of reward modeling with same-prompt response pairs lacking diversity. Error bars are from
+5 runs with different seeds.
+Further Investigation. Intuitively, the cross-prompt comparison can improve the quality of annotation since it increases the diversity in generation.To further explore this, we
+19
+Hao Sun∗
+, Yunyi Shen∗
+, Jean-Francois Ton
+introduce two synthetic setups2 designed to analyze the source of gains. In the Similar
+Comparison setup, response pairs generated for a single prompt exhibit similar quality
+and lack diversity. In the Diversified Comparison setup, response pairs for a single
+prompt are of different qualities. Specifically, we use a golden reward model to score 10
+generated responses per prompt and select the two middle-ranked responses to simulate the
+Similar Comparison setup. Whereas in the Diversified Comparison setting, we use
+the highest and lowest-scored responses to construct the response pair for each prompt.
+Results and Takeaways. Figure 5 shows the results of those two synthetic setups. We
+can conclude that cross-prompt comparisons are essential when responses for a single prompt
+lack diversity. In the Similar Comparison setting, the conventional same-prompt comparisons often fail to produce informative reward models that can improve golden reward
+values. In contrast, cross-prompt annotations substantially enhance performance in such
+cases. In the Diversified Comparison setting, the need for cross-prompt comparisons diminishes as response diversity increases, though they do not have an evident negative impact
+on reward modeling performance. Comparing results across both settings, as well as results
+in Figure 4, we find the superiority of cross-prompt comparison is reflected in its general
+capability regardless of response diversities — the performance achieved by cross-prompt
+annotations is more stable and has lower dependence of the response diversities.
+Figure 6: Comparing the averaged absolute difference in scores in pairwise annotations (x-axis) and
+improvements achieved by using cross-prompt annotations (y-axis). The two variables are highly
+correlated.
+Finally, we examine the relationship between the average absolute score differences in
+pairwise annotations (x-axis) across three setups (i.e., Random for randomly select two
+responses for each pair, Similar and Diverse for the two synthetic settings) and the corresponding performance improvements from cross-prompt annotations (y-axis). Scatter plots
+with linear fits are shown in Figure 6. The strong correlation indicates that cross-prompt
+annotations are most beneficial when same-prompt responses lack diversity. Importantly,
+we find the averaged reward differences between pairwise data in the synthetic setting of
+2. It is worth noting that none of those two synthetic setups is realizable in practice without a reward
+model. And the randomly sampled pairs are the only realistic setups for annotations.
+20
+Reward Modeling
+Similar cases and the Random settings are similar, this implies that in practice, when
+randomly selecting two responses for a single prompt to be annotated, those pairs are likely
+facing the challenge of high response similarity. And this is the case when cross-prompt
+annotation can be applied to improve performance.
+Conclusive Remark on Experiments Our experimental results highlight the advantages of classification-based reward models over traditional BT models, particularly in terms
+of flexibility and robustness to annotation quality and quantity. While BT models perform
+better under high-quality annotations, classification models demonstrate superior overall
+performance and resilience to increasing annotation error rates. Additionally, our empirical
+studies on cross-prompt comparisons show it significantly improves reward modeling, especially when responses to the same prompt lack diversity. Through synthetic experiments,
+we further demonstrate that the challenge of limited diversity is likely to occur in practice,
+providing additional justification for exploring this annotation method in future research.
+21
+Hao Sun∗
+, Yunyi Shen∗
+, Jean-Francois Ton
+Appendix: Table of Contents
+A Asymptotic Theory on BT Reward Modeling 23
+B Analyzing Order Consistency 27
+B.1 Lower Bound on Population Level Order Consistency . . . . . . . . . . . . . 27
+B.2 Link Classification Reward with the BT Reward . . . . . . . . . . . . . . . 29
+C Analyzing Cross-Prompt Comparisons 30
+C.1 Derivation of Example 1 (See page 12) . . . . . . . . . . . . . . . . . . . . . 30
+C.2 Proof of Proposition 10 (See page 12) . . . . . . . . . . . . . . . . . . . . . 31
+C.3 Proof of Theorem 11 (See page 13) . . . . . . . . . . . . . . . . . . . . . . . 31
+D Experiment Details 34
+D.1 Computational Efficient Experiment Design and Reproducibility . . . . . . 34
+D.2 Supervised Fine Tuning Stage of Base Models . . . . . . . . . . . . . . . . . 34
+D.3 Training and Test Data (Responses) Creation . . . . . . . . . . . . . . . . . 34
+D.4 Creating Embeddings . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 34
+D.5 Simulated Preference Annotation with Golden Reward Models . . . . . . . 34
+D.6 Hyper-Parameters of the LGB models and MLPs . . . . . . . . . . . . . . . 35
+E Additional Experiment Results on Harmless and Helpful 35
+F Additional Results on Helpsteer and UltraFeedback 45
+22
+Reward Modeling
+Appendix A. Asymptotic Theory on BT Reward Modeling
+Recall that we have a known embedding function Ψ(·, ·) X × Y → [0, 1]d
+such that there
+exists an unknown function g : R
+d → R and the true utility function r(y, x) = g(Ψ(y, x)) for
+all y, x. We assume the embedding to have a range of [0, 1], if the pretrained model do not
+have this range, we can scale it to be. Then reward modeling reduce to learn the function
+g. Observe that under this formalism there is no need for a comparison to have the same
+prompt.
+Analyzing BT reward modeling as non-parametric logistic regression with antisymmetric structure Denote our reward model as ˆrθ, parameterized by θ, when there is
+no confusion, we will abbreviate it as ˆr. The reward difference between two pairs of prompts
+and responses (x1, y1) (x2, y2) is then ˆr
+∆(Ψ(x1, y1), Ψ(x2, y2)) := ˆr(Ψ(x1, y1))−rˆ(Ψ(x2, y2)).
+We could have x1 = x2, i.e., having matched prompt but it is not necessary. And the
+predicted probability that (x1, y1) better than (x2, y2) is then σ(ˆr
+∆(Ψ(x1, y1), Ψ(x2, y2)))
+with σ being sigmoid function. This is the same as having a softmax over two rewards, i.e.,
+σ(ˆr
+∆(Ψ(x1, y1), Ψ(x2, y2))) = softmax(ˆr(Ψ(x1, y1)), rˆ(Ψ(x2, y2))). The second viewpoint is
+easier in applying theoretical analysis techniques developed in literature (Schmidt-Hieber,
+2020; Bos and Schmidt-Hieber, 2022). To that end, we denote the vector of two rewards
+as rˆ and the class probability is then softmax(rˆ) Training such reward model reduce to
+train a classifier with cross entropy loss whose predicted conditional class probability being
+softmax(ˆr(Ψ(x1, y1)), rˆ(Ψ(x2, y2))). Our theoretical development generally follow Bos and
+Schmidt-Hieber (2022). This is a special case of an MLP that could preserve symmetry such
+that if we exchange the role of x1, y1 and x2, y2 we get a negative difference. By showing
+this particular logit-Siamese architecture could approximate the true class probability, we
+can deduce that a BT reward model could approximate true reward.
+For notational convenience, we denote the embedding of the ith pair as Ψ
+(i)
+1
+, Ψ
+(i)
+2
+for
+i = 1, . . . , n, without lose of generality we assume Ψ
+(i)
+· ∈ [0, 1]d
+. Denote the true preference
+probability as p
+(i)
+0
+and model predicted as pˆ
+(i) = (σ(ˆr
+∆(Ψ
+(i)
+1
+, Ψ
+(i)
+2
+)), 1−σ(ˆr
+∆(Ψ
+(i)
+1
+, Ψ
+(i)
+2
+))) =
+softmax(rˆ(Ψ
+(i)
+1
+, Ψ
+(i)
+2
+)) denote the preference vector as h
+(i)
+, equals to (1, 0) if the first response pair is prefered and (0, 1) otherwise. The BT model is reduced to a (pairwise)
+classification problem such that the likelihood is given by
+LeCE(p) = −
+1
+n
+Xn
+i=1
+(h
+(i)
+)
+⊤ log(p
+(i)
+), pˆ = arg min
+p∈Fθ
+LeCE(p)
+It is unrealistic to assume we can find an NN that actually attends the global minimum, we
+denote the difference between the fitted NN and the global minimum as
+∆n(p0, pˆ) = E
+
+LeCE(pˆ) − min
+p∈Fθ
+LeCE(p)
+
+We consider truncated KL risk, similar to Bos and Schmidt-Hieber (2022) to overcome
+the divergence problem of KL risk.
+23
+Hao Sun∗
+, Yunyi Shen∗
+, Jean-Francois Ton
+Definition 12 (Truncated KL risk (Bos and Schmidt-Hieber, 2022)) The B−truncated
+KL risk for a probability estimator pˆ
+RB(p0, pˆ) = E
+
+p
+⊤
+0 min 
+B, log p0
+pˆ
+ (29)
+We consider MLP with ReLU activations for Fθ, depends on depth L and width vector
+m = (m0, . . . , mL) i.e.,
+F(L,m) = {f : R
+m0 → R, x → f(x) = WLψvLWL−1 . . . W1ψv1W0x}
+where ψv(x) = max(x − v, 0) is the ReLU activation with bias v.
+Assumption 6 (MLP reward model) We will further assume the network parameters
+having norm restriction and sparsity, a common assumption in studying MLP for classification problems (Yara and Terada, 2024; Bos and Schmidt-Hieber, 2022). That is, in this
+work we consider networks from the family
+F(L,m, s) :=
+
+
+
+f : f ∈ F(L,m), max
+j=0,...,L
+max(||Wj ||∞, |vj |∞) ≤ 1,
+X
+L
+j=0
+(||Wj ||0 + |vj |0) ≤ s
+
+
+
+(30)
+Another useful function class in theory is the softmax output version of the reward model,
+i.e., consider
+Fσ(L,m, s) := {p(Ψ1, Ψ2) : p = softmax(f(Ψ1), f(Ψ2)), f ∈ F(L,m, s)}
+Next we assume the probability of preference is not too close to 0 or 1, in the form of a
+small value bound
+Definition 13 (Small value bound by Bos and Schmidt-Hieber (2022)) Let α ≥ 0
+and H is a function class we say H is α−small value bounded (α−SVB) if there exists a
+constant C > 0 s.t. for all probability estimated p = (p0, p1) ∈ H it holds that
+P(pk(Ψ1, Ψ2) ≤ t) ≤ Ctα
+, for all t ∈ (0, 1] and all k = 0, 1 (31)
+which indices that our reward function and design of comparisons should have a tail behavior
+that we do not tend to compare pairs having very different reward function. We denote this
+family as
+(32)
+Definition 14 (H¨older smooth function) For β > 0 and D ⊂ R
+d
+, the ball of β−H¨older
+functions with radius Q is defined as
+C
+β
+(D, Q) :=
+
+
+
+f : D → R :
+X
+γ:||γ||1<β
+||∂
+γ
+f||∞ +
+X
+γ:||γ||1=⌊β⌋
+sup
+x̸=y∈D
+|∂
+γf(x) − ∂
+γf(y)|
+||x − y||β−⌊β⌋
+∞
+≤ Q
+
+
+
+(33)
+24
+Reward Modeling
+Assumption 7 (Class of true utility function) We assume that the true reward functions are β−H¨older and the induced probability by softmax is α−SVB. I.e., we consider the
+function class
+Gα(β, Q, C) = C
+β
+(D, Q) ∩ S(α, C) (34)
+Note that this is nonempty since constant g satisfy the requirement for any β > 0, α > 0
+with Q > 1/2 and C ≥ 2
+α.
+Theorem 15 (Theorem 5 of Schmidt-Hieber (2020), approximating H¨older smooth
+functions) For every function f ∈ C
+β
+(D, Q) and every M > max((β + 1)β
+,(Q + 1)β/de
+β
+)
+there exist a neural network H ∈ F(L,m, s) with L = 3⌈log2
+(M)(d/β+1)(1+⌈log2
+(max(d, β))⌉),
+m = (d, 6(d + ⌈β⌉)⌊Md/β⌋, . . . , 1) and s ≤ 423(d + β + 1)3+dMd/β log2
+(M)(d/β + 1) such
+that
+||H − f||∞ ≤
+CQ,β,d
+M
+Remark 16 Note that since softmax with two output is Lipchetz with constant 2, we have
+L∞ distance between the softmax output being bounded by 2CQ,β,d/M by applying the above
+theorem.
+Theorem 17 (Oracle inequality, Theorem 3.5 of Bos and Schmidt-Hieber (2022))
+Let F be a class of conditional class probabilities and pˆ be any estimator taking value in F,
+If B ≥ 2 and Nn = N (δ, log(F), dτ (·, ·)) ≥ 3 for τ = log(Cne
+−B/n), then
+RB(p0, pˆ) ≤ (1 + ϵ)
+
+inf
+p∈F
++∆n(p0, pˆ) + 3δ
+
++
+(1 + ϵ)
+2
+ϵ
+68B log(Nn) + 272B + 3Cn(log(n/Cn) + B)
+n
+(35)
+for all δ, ϵ ∈ (0, 1] and 0 < Cn ≤ n/e.
+Lemma 18 (Adapted lemma 3.8 of Bos and Schmidt-Hieber (2022))
+Let V =
+QL+1
+ℓ=0 (mℓ + 1), then for every δ > 0
+N (δ, log(Fσ(L,m, s)), || · ||∞) ≤ (8δ
+−1
+(L + 1)V
+2
+)
+s+1 (36)
+and
+log N (δ, log(Fσ(L,m, s)), || · ||∞) ≤ (s + 1) log(22L+7δ
+−1
+(L + 1)d
+2
+s
+L
+) (37)
+Substitute to the first bound and take log yield the second line.
+Note that, although the proof largely carries follow Bos and Schmidt-Hieber (2022) we
+cannot directly apply lemma 3.8 of Bos and Schmidt-Hieber (2022) in our setting because
+before softmax layer the two one-dimensional scores came from the same MLP with identical
+activation. This is only a subset of the family Bos and Schmidt-Hieber (2022) considered
+in their work.
+Proof For g ∈ log(Fσ(L,m, s), there exists an fg ∈ F(L,m, s) such that g(x1, x2) =
+log(softmax(fg(x1), fg(x2))).
+25
+Hao Sun∗
+, Yunyi Shen∗
+, Jean-Francois Ton
+By Lemma 5 of Schmidt-Hieber (2020), we have
+N (δ/4, F(L,m, s), || · ||∞) ≤ (8δ
+−1
+(L + 1)V
+2
+) (38)
+Let δ > 0, denote {fj}
+N
+j=1 the centroid of a minimum δ/4 cover of F(L,m, s), thus for
+each fj ∈ F(L,m, s), there exists a ˆfj s.t., ˆfj ’s are interior of a δ/2-cover of F(L,m, s)
+for a g ∈ log(Fσ(L,m, s), by covering property there exists a j s.t. ||fg − ˆfj ||∞ ≤ δ/2, by
+proposition C.6 of Bos and Schmidt-Hieber (2022), we will abbrivate fg(xi) as f
+i
+g
+||g − log(softmax( ˆf
+1
+j
+,
+ˆf
+2
+j
+))||∞ = || log(softmax(f
+1
+g
+, f 2
+g
+)) − log(softmax( ˆf
+1
+j
+,
+ˆf
+2
+j
+))||∞
+≤2||[f
+1
+g
+, f 2
+g
+] − [
+ˆf
+1
+j
+,
+ˆf
+2
+j
+]||∞ ≤ 2 max
+i
+||f
+i
+g − ˆf
+i
+j
+|| ≤ δ
+(39)
+Since g arbitrary, we have log(softmax( ˆf
+1
+j
+,
+ˆf
+2
+j
+)) is an internal δ cover of log(Fσ(L,m, s),
+hence
+N (δ, log(Fσ(L,m, s)), || · ||∞) ≤ N (δ/4, F(L,m, s), || · ||∞) ≤ 8δ
+−1
+(L + 1)V
+2
+(40)
+The second bound is by having m0 = d, mL+1 = 1 (since we have scalar reward) and
+removing inactive nodes we have by proposition A1 of Bos and Schmidt-Hieber (2022)
+V ≤ dsL2
+L+2
+Remark 19 Readers might suspect this is a direct result of Bos and Schmidt-Hieber (2022)
+by first concatenating two embeddings and training an MLP with this joint embedding to
+predict softmax score. While this proposal will satisfy the requirements for the theory, it
+does not provide a way to generate a reward for one embedding that does not depend on
+another embedding and might not be antisymmetric. Theoretically, the rate depends on
+embdding dimension d rather than the concatenated dimension 2d as directly using results
+from Bos and Schmidt-Hieber (2022).
+Theorem 20 (Truncated KL risk bound) Suppose the true utility function induced probability of preference is in Gα(β, Q, C) for α ∈ [0, 1] and ϕn = 2
+(1+α)β+(3+α)d
+(1+α)β+d n
+−
+(1+α)β
+(1+α)β+d . Let pˆ
+be an estimator from family Fσ(L,m, s) satisfying 1) A(d, β) log2
+(n) ≤ L ≲ nϕn for some
+suitable constant A(d, β), 2) mini mi ≳ nϕn and 3) s ≍ nϕn log(n). For sufficiently large
+n, there exists constants C
+′
+, C′′ such that when ∆n(ˆp, p0) ≤ C
+′′BϕnLlog2
+(n) then
+RB(p0, pˆ) ≤ C
+′BϕnLlog2
+(n) (41)
+where a ≲ b means there exists some constant C s.t. a ≤ Cb and a ≍ b means a ≲ b and
+b ≲ a.
+Proof We apply oracle bound Theorem 17. Take δ = n
+−1 and ϵ = Cn = 1, using the fact
+that dτ is upper bounded by sup-norm. Then apply Theorem 18, we have
+RB(p, pˆ) ≤ 2
+
+inf
+p
+RB(p0, p) + ∆n(p0, pˆ +
+3
+n
+)
+
++ 4 ·
+68B(s + 1) log(22L+7δ
+−1
+(L + 1)d
+2
+s
+L) + 272B + 3(log(n) + B)
+n
+(42)
+26
+Reward Modeling
+We pick M = ⌊c2
+(2+α)β
+(1+α)β+d n
+β
+(1+α)β+d ⌋ for small small c, with large enough n, we apply Theorem 15, its softmax transformed version denote as ˜p is in Fσ(L,m, s) with L = and maximim
+width bounded by ≲ Md/β = c
+d/βnϕn, and similarly we have s ≲ c
+d/βMd/β log2
+(M) =
+c
+d/βnϕn log2
+(M). Whenever we have A(d, β) log2
+(n) ≤ L ≲ nϕn we have the maximum
+width is ≳ nϕn and s ≍ nϕn log(n). Observe that the softmax output network satisfy
+Theorem 3.2 of Bos and Schmidt-Hieber (2022), we have with C1 = 4(4 + 2CQ,β,d). The 2
+before CQ,β,d, different to the exact statement of Theorem 3.2 of Bos and Schmidt-Hieber
+(2022) is because our CQ,β,d is before softmax layer and since softmax layer is Lipchetz of
+constant 2. We further have C1 + 1 ≤ 4(5 + 2CQ,β,d), we have
+inf
+p∈Fσ
+R(p0, p) ≤ 8C2
+3+α
+(5 + 2CQ,β,d)
+3
+M1+α
+
+1 +
+Iα<1
+1 − α
++ log(M)
+
+≲ ϕn log(n)
+Together with oracle bound Equation (42) and s ≍ nϕn log(n), the statement follows.
+Lemma 21 (Lemma 3.4 of Bos and Schmidt-Hieber (2022)) For any B ≥ 2, P, Q
+being probability measure on the same measure space, we have
+H2
+(P, Q) ≤
+1
+2
+KLB(P, Q) (43)
+where for discrete probabilities
+H2
+(P, Q) = X
+j
+(
+p
+Pj −
+p
+Qj )
+2
+Remark 22 (Connecting probability to reward) Since we have (
+√
+a −
+√
+b)
+2 = (a −
+b)
+2/(
+√
+a +
+√
+b)
+2
+, use Theorem 21, indicates that in large subset of the embedding space
+
+p0(Ψ1, Ψ2) − pˆ(Ψ1, Ψ2)
+
+ ≲
+
+
+√
+p0 +
+p
+pˆ
+
+
+p
+ϕnLlog(n)
+
+r(Ψ1) − r(Ψ2) − (ˆr(Ψ1) − rˆ(Ψ2))
+
+ ≲
+
+√p0 +
+√
+pˆ
+
+
+p˜(1 − p˜)
+p
+ϕnLlog(n)
+where p˜ is a probability between p0 and pˆ, the second line is due to mean value theorem. This
+indicates that the comparison should be between those pairs that relatively close in reward
+to avoid diverging behavior of logit function.
+Appendix B. Analyzing Order Consistency
+B.1 Lower Bound on Population Level Order Consistency
+Proposition 23 (Lower bound on population level order consistency) Suppose a
+learned model Hˆ achieves objective equation 17 up to 1 − δϵ error for some small 0 < δ < 1
+and ϵ < 3/20, i.e.,
+Ex1,x2,y1,y2,h1
+h
+h = Hˆ
+i
+≥ 1 − δϵ (18)
+27
+Hao Sun∗
+, Yunyi Shen∗
+, Jean-Francois Ton
+Then, with probability at least 1 − δ over ∆r, for any given ∆r the order consistency of rˆ
+with respect to the oracle utility is bounded below by:
+Ex1,x2,y1,y2
+
+1
+
+Hˆ · [r(x1, y1) − r(x2, y2)] ≥ 0
+
+
+
+
+
+∆r
+
+≥ (1 − ϵ) · ξ
+2
+(∆r) + ϵ · (1 − ξ(∆r))2
+(19)
+Further if we assume that with probability at least 1 − κ, that ξ(∆r) ≥
+√
+ϵ
+2 + 1 − 3ϵ + ϵ, we
+have
+Ex1,x2,y1,y2∼ℓ(x)
+h
+1
+
+Hˆ · [r(x1, y1) − r(x2, y2)] > 0
+i ≥ 1 − 4ϵ − κ − δ (20)
+Proof The idea of the proof is to first use Markov’s inequality to bound probability that
+for a given distance ∆r the preference model not well approximate the annotator and under
+the event that the preference model approximate the annotator well, we bound the total
+error combined by preference model and annotator.
+By assumption we have the (marginal) error probability averaging over all distances r
+is
+Px,y1,y2,h h
+1
+
+Hˆ ̸= h
+i
+=E∆r
+
+P
+
+Hˆ ̸= h
+
+
+
+
+∆r
+
+<δϵ
+(44)
+Denote the random variable
+Πr := P
+
+Hˆ ̸= h
+
+
+
+
+∆r
+
+(45)
+by Markov’s inequality
+Pr (Πr ≥ ϵ) ≤
+δϵ
+ϵ
+= δ (46)
+In the event {∆r : P
+
+Hˆ ̸= h
+
+
+
+
+∆r
+
+< ϵ}, with probability 1 − δ we bound the error rate as
+function of ∆r. Condition on ∆r, define the following probabilities:
+• pannotator = ξ(∆r) is the probability that the annotator h is correct (i.e., agrees with
+the oracle utility) given the oracle distance.
+• 1 − pannotator = 1 − ξ(∆r) is the probability that the annotator Hβ is incorrect given
+the oracle distance.
+Given the bounded difference between Hˆ
+θ and Hβ:
+• Correct Case: When the annotator is correct, the learned model agrees with the
+annotator with probability at least 1 − ϵ. Thus:
+pcorrect ≥ (1 − ϵ) · ξ(∆r). (47)
+28
+Reward Modeling
+• Incorrect Case: When the annotator is incorrect, the learned model agrees with the
+annotator with probability at most ϵ. Thus:
+pincorrect ≤ ϵ · (1 − ξ(∆r)). (48)
+The order consistency of the learned model Hˆ
+θ
+∗ with the oracle utility can be expressed
+as:
+Ex,y1,y2∼ℓ(x)
+
+1
+
+Hˆ (r(y1, x) − r(y2, x)) ≥ 0
+
+
+
+
+
+∆r
+
+= pcorrect·pannotator+pincorrect·(1−pannotator).
+(49)
+Substituting the bounds and simplifying, we have
+Ex,y1,y2∼ℓ(x)
+
+1
+
+Hˆ (r(y1, x) − r(y2, x)) ≥ 0
+
+
+
+
+
+∆r
+
+≥ (1 − ϵ)· ξ
+2
+(∆r) + ϵ ·(1 − ξ(∆r))2
+. (50)
+Second part of the proof is by observing that ξ(∆r) ≥
+√
+ϵ
+2 + 1 − 3ϵ + ϵ implies (1 − ϵ) ·
+ξ
+2
+(∆r) + ϵ · (1 − ξ(∆r))2 ≥ 1 − 4ϵ when ϵ < 3/20, consider this conditional bound
+Ex,y1,y2∼ℓ(x)
+
+1
+
+Hˆ (r(y1, x) − r(y2, x)) ≥ 0
+
+
+
+
+
+∆r
+
+≥ 1 − 4ϵ (51)
+√
+the stated bound fail either 1) Πr > ϵ, with probability at most δ or 2) ξ(∆r) <
+ϵ
+2 + 1 − 3ϵ + ϵ with probability at most κ, thus the stated bound is true with probability
+at least 1 − κ − δ due to union bound on failure modes.
+Then by definition of conditional probability, the bound in theorem true.
+B.2 Link Classification Reward with the BT Reward
+Proposition 24 (Classification reward) Suppose data actually coming from BT model Equation (1), and the score si
+:= logit P(i wins) is connected to BT reward that for a constant
+C does not depends on i
+si ≥ ri − C
+Proof We condition on which j that i competed with and apply Jensen’s inequality
+P(i wins) = Ej [P(i ≻ j|j)] = Ej
+
+ui
+ui + uj
+
+≥
+ui
+ui + E[uj ]
+With some straightforward algebra, we have that
+P(i wins)
+1 − P(i wins)E[uj ≥ ui
+]
+Take log at each side and substitute ui = exp(ri) then rearrange
+si
+:= logit P(i wins) ≥ ri − log E[exp(rj )]
+we have log E[exp(rj )] is a constant.
+29
+Hao Sun∗
+, Yunyi Shen∗
+, Jean-Francois Ton
+Appendix C. Analyzing Cross-Prompt Comparisons
+C.1 Derivation of Example 1 (See page 12)
+Example 1 (Annotation Quality under Gaussian Score) When data for pairwise annotation is generated through random sampling of two responses y1, y2 ∼ ℓ(x), we further
+assume the utility of those two responses are sampled from a Gaussian distribution with
+variance σ
+2
+x
+, i.e., y ∼ ℓ(x), r(x, y) ∼ N (µx, σ2
+x
+). Then the annotation quality Qpair(x) on
+such a prompt can be defined as the averaged annotation order consistency:
+Qpair(x) = Ey1,y2|x[τx] = Ey1,y2|x [σ(β|r(x, y1) − r(x, y2)|)] (25)
+where τx = σ(β|r(x, y1) − r(x, y2)|) is a random variable (over y1, y2) and the probability
+density function of τx is
+fτx|x(t) = 1
+p
+πβ2σ
+2
+x
+exp
+
+−
+
+log 
+t
+1−t
+2
+4β
+2σ
+2
+x
+
+ ·
+1
+t(1 − t)
+(26)
+Proof To get the PDF of f(τ ), denote τ = σ(|ρ|), where we use ρ(x) = β(r
+∗
+(y1|x) −
+r
+∗
+(y2|x)), we have ρ(x) ∼ N (0, 2β
+2σ
+2
+x
+) follows the normal distribution, and |ρ(x)| follows
+a folded normal distribution, its cumulative distribution function, mean and variance are
+given by
+F|ρ|
+(x; µ = 0, σ2 = 2β
+2σ
+2
+x
+) = erf 
+x
+2βσx
+
+, µ|ρ| =
+2βσx √
+π
+, σ2
+|ρ| = 2β
+2σ
+2
+x
+(1 −
+2
+π
+), (52)
+respectively.
+To find the PDF of τ = σ(|ρ|), we use the change of variables formula. If Y = g(X) and
+g is a monotonic function, the PDF of Y , fY (y), can be obtained by:
+fY (y) = fX(g
+−1
+(y))
+
+
+
+
+d
+dy g
+−1
+(y)
+
+
+
+
+. (53)
+For the sigmoid function, the inverse is given by:
+g
+−1
+(y) = log 
+y
+1 − y
+
+. (54)
+The derivative of the inverse sigmoid function is:
+d
+dy g
+−1
+(y) = 1
+y(1 − y)
+. (55)
+Plugging these into the change of variables formula, we get:
+fτ (t) = 1
+p
+πβ2σ
+2
+x
+exp
+
+−
+
+log 
+t
+1−t
+2
+4β
+2σ
+2
+x
+
+ ·
+1
+t(1 − t)
+. (56)
+30
+Reward Modeling
+C.2 Proof of Proposition 10 (See page 12)
+Proposition 25 (Cross-Prompt Comparisons Increase Utility Diversity) When
+data for pairwise annotation is generated through random sampling of two responses y1, y2 ∼
+ℓ(x), and the utility of those two responses are sampled from a Gaussian distribution with
+variance σ
+2
+x
+, i.e., y ∼ ℓ(x), rx,y ∼ N (µx, σ2
+x
+), when there are multiple prompts x, we have
+ExEy1,y2|x [|rx,y1 − rx,y2
+|] ≤ Ex1,x2Ey1|x1,y2|x2
+[|rx1,y1 − rx2,y2
+|] (27)
+Proof Let xik ∼ N (µk, σ2
+k
+), and xjl ∼ N (µl
+, σ2
+l
+), with k ̸= l, then
+xik − xjl ∼ N (µk − µl
+, σ2
+k + σ
+2
+l
+) (57)
+The expectation of |xik − xjl| is given by
+E [|xik − xjl|] = q
+σ
+2
+k + σ
+2
+l
+r
+2
+π
+exp 
+−
+(µk − µl)
+2
+2(σ
+2
+k + σ
+2
+l
+)
+
++ |µk − µl
+|erf 
+|µk − µl
+|
+σ
+2
+k + σ
+2
+l
+
+(58)
+as its special case, let xjk ∼ N (µk, σ2
+k
+), then
+xik − xjk ∼ N (0, 2σ
+2
+k
+) (59)
+E [|xik − xjk|] = 2σk
+r
+1
+π
+(60)
+we consider the special case of µk = µl
+:
+E [|xik − xjl|]
+E [|xik − xjk|]
+≥ 1, (61)
+the equality holds only if σ
+2
+k = σ
+2
+l
+. This is because 2(1+t)
+2
+(1+t)
+2 reaches its only minimum when
+t = 1 and we can let t =
+σk
+σl
+. Since q
+2
+π
+exp(−x
+2
+) + |x|erf(|x|) is a monotonically increasing
+function at x ≥ 0, equation 61 also holds for µk ̸= µl
+.
+C.3 Proof of Theorem 11 (See page 13)
+Lemma 26 Suppose ξ : R+ → [1/2, 1], first order differentiable, monotone increasing and
+z ∼ f with f being density symmetric to 0 and unimodal. We have for all µ
+E(ξ(|z + µ|)) ≥ E(ξ(|z|)) (62)
+Proof Without loss of generality, we assume µ ≥ 0. Suppose the results hold for µ ≥ 0, it
+has to hold for µ ≤ 0. To see that, we observe that −z ∼ P due to symmetry, and apply
+the result for positive µ so that E(ξ(|z + µ|)) = E(ξ(| − z − µ|)) ≥ E(ξ(| − z|)) = E(ξ(|z|)).
+31
+Hao Sun∗
+, Yunyi Shen∗
+, Jean-Francois Ton
+It thus suffices to show the result for nonnegative µ. To do so, we prove that this
+expectation, as a function of µ, is monotone increasing by taking the derivative.
+d
+dµE(ξ(|z + µ|)) = E
+
+∂
+∂µξ(|z + µ|)
+
+= E
+
+d
+d|z + µ|
+ξ(|z + µ|) sign(z + µ)
+
+=
+Z ∞
+−∞
+d
+d|z + µ|
+ξ(|z + µ|) sign(z + µ)f(z)dz
+=
+Z ∞
+−µ
+d
+d|z + µ|
+ξ(|z + µ|)f(z)dz −
+Z −µ
+−∞
+d
+d|z + µ|
+ξ(|z + µ|)f(z)dz
+=
+Z ∞
+0
+d
+d|z|
+ξ(|z|)f(z − µ)dz −
+Z 0
+−∞
+d
+d|z|
+ξ(|z|)f(z − µ)dz
+=
+Z ∞
+0
+d
+d|z|
+ξ(|z|)f(z − µ)dz −
+Z ∞
+0
+d
+d|z|
+ξ(|z|)f(z + µ)dz
+≥ 0
+The last line due to unimodality and we must have for all z ∈ [0, ∞) f(z − µ) ≥ f(z + µ)
+for µ ≥ 0 while d
+d|z|
+ξ(|z|) symmetric to 0 and bounded.
+Lemma 27 Suppose x1, x2 iid from a unimodal symmetric location scale family density gx,
+i.e., the density of x1, x2 can be written as gx(x) = f((x−µx)/σx) for f being unimodal and
+symmetric to 0. Further, suppose y1, y2 ∼ gy iid with density gy(y) = f((y − µy)/σy) for
+the same f, we have for a function ξ : R+ → [1/2, 1], first order differentiable, monotone
+increasing and concave, that
+1
+2
+E(ξ(|x1 − x2|)) + 1
+2
+E(ξ(|y1 − y2|)) ≤ E(ξ(|x1 − y1|)) (63)
+Proof By assumption y1, y2, x1, x2’s are from the same location-scale family. There exists
+a z whose density is f such that y1 has the same distribution as σyz +µy and y1 −y2 having
+the same distribution as √
+2σyz, x1 − x2 having same distribution as √
+2σxz and x1 − y1
+having the same distribution with scale q
+σ
+2
+x + σ
+2
+y and location µx − µy We first find an
+upper bound of the left-hand side using Jensen’s inequality as ξ concave
+1
+2
+E(ξ(|x1 − x2|)) + 1
+2
+E(ξ(|y1 − y2|)) = 1
+2
+E(ξ(
+√
+2σx|z|)) + 1
+2
+E(ξ(
+√
+2σy|z|)) (64)
+= E(
+1
+2
+ξ(
+√
+2σx|z|) + 1
+2
+ξ(
+√
+2σy|z|)) (65)
+≤ E(ξ(
+1
+2
+√
+2σx|z| +
+1
+2
+√
+2σy|z|) (66)
+= E
+
+ξ
+ r
+(σx + σy)
+2
+2
+|z|
+!! (67)
+(68)
+32
+Reward Modeling
+The righthand side
+E(ξ(|x1 − y1|)) = E
+h
+ξ
+
+|µx − µy +
+q
+σ
+2
+x + σ
+2
+y
+z|
+i (69)
+≥ E
+h
+ξ
+q
+σ
+2
+x + σ
+2
+y
+|z|
+i (70)
+by Theorem 26. We observe that for all σx, σy that
+r
+(σx + σy)
+2
+2
+≤
+q
+σ
+2
+x + σ
+2
+y
+(71)
+Thus for all |z|, we have ξ
+q
+σ
+2
+x + σ
+2
+y
+|z|
+
+≥ ξ
+q
+(σx+σy)
+2
+2
+|z|
+
+and in turn by taking expectation the result in the statement is true.
+Lemma 28 We have that for random variables described above and suppose σx, σy are iid,
+µx, µy are iid
+Eσx,µxEx|σx,µx
+(ξ(|x1 − x2|)) ≤ Eσx,σy,µx,µyEx,y|σx,σy,µx,µy
+(ξ(|x1 − y1|)) (72)
+Proof Since σx, σy, µx, µy iid we can rewrite the left hand side as
+Eσx,µxEx|σx,µx
+(ξ(|x1 − x2|)) = 1
+2
+
+Eσx,µxEx|σx,µx
+(ξ(|x1 − x2|)) + Eσy,µyEy|σy,µy
+(ξ(|y1 − y2|))
+(73)
+= Eσx,σy,µx,µy
+
+1
+2
+Ex|σx,µx
+(ξ(|x1 − x2|)) + 1
+2
+Ey|σy,µy
+(ξ(|y1 − y2|))
+(74)
+and the statement reduces to the two-pair case we showed before.
+Theorem 11 (Cross-Prompt Annotation Improves Annotation Quality) When
+data for pairwise annotation is generated through random sampling of two responses y1, y2 ∼
+ℓ(x), and the utility of those two responses are sampled from a location-scale family with
+probability density function gx(x) = f((x − µx)/σx) for f being unimodal and symmetric to
+0. For any ξ : R+ → [1/2, 1], first order differentiable, monotone increasing and concave,
+we have
+Ex[Qpair(x)] = ExEy1,y2|x [ξ(|rx,y1 − rx,y2
+|)]
+≤ Ex1,x2Ey1|x1,y2|x2
+[ξ(|rx1,y1 − rx2,y2
+|)] := Ex1,x2
+[Qcross−prompt(x1, x2)].
+(28)
+Proof Theorem 11 follows directly the combination of Lemma 26 - Lemma 28.
+33
+Hao Sun∗
+, Yunyi Shen∗
+, Jean-Francois Ton
+Appendix D. Experiment Details
+To enhance the reproducibility of our work, all code, datasets (demonstrations),
+fine-tuned LLMs, generated training and test responses, annotations of those
+responses, and their embeddings will be made publicly available at
+https: // github. com/ holarissun/ RewardModelingBeyondBradleyTerry
+D.1 Computational Efficient Experiment Design and Reproducibility
+Our experiments are conducted on a cluster having 128 Intel(R) Xeon(R) Platinum
+8336C CPUs @2.30GHz with NVIDIA V100 32GB or NVIDIA A100 80G GPU nodes. We use
+vllm (Kwon et al., 2023) to accelerate the LLM generation process.
+To reproduce our 12,000 experiment results (since we will release the embeddings of
+the generated responses), only CPUs are needed, and to reproduce all experiments, 6000h
+CPU-core hours are needed — on a machine with 128 CPU cores, it will take 50 hours to
+reproduce all of our 12000 experiments (This includes our 5 repeated runs using different
+random seeds. Running with only 1 seed will take less than 10 hours). Each set-up takes
+less than 30 min CPU-core time usage — less than 1 minute to finish on a 128-core server.
+D.2 Supervised Fine Tuning Stage of Base Models
+Following Stiennon et al. (2020); Bai et al. (2022a), we use held-out demonstration datasets
+generated by GPT4 on the two tasks to conduct SFT on the three base models we use
+(Gemma2b, Gemma7b, LLaMA3-8b). Such an SFT procedure generates three SFT-ed
+checkpoints as additional base LLMs, the Gemma2b-SFT, Gemma7b-SFT, LLaMA3-8bSFT. The SFT takes less than 10 hours (4 hours for the 2b models) using A100 GPUs and
+the TRL framework (von Werra et al., 2020).
+D.3 Training and Test Data (Responses) Creation
+The Harmless dataset contains 41876 training prompts and 2273 test prompts. The
+Helpful dataset contains 42846 training prompts, and 2292 test prompts. In our experiment, for each of the 6 base LLMs, we create 10 responses on each training prompt
+as candidates for reward model training. For each of the test prompts, we create 500
+responses and annotate their golden utilities using the golden reward models for testing.
+D.4 Creating Embeddings
+We use Gemma2b (Team et al., 2024) to generate embeddings for reward modeling in our
+experiments. Since we have 6 base LLMs to generate responses and 2 datasets, creating the
+embeddings on those generations requires GPUs. We use V100 GPUs with 32GB memory
+for the generation of embeddings. Each setting (40000 prompts with 10 generations and
+2000 prompts with 500 generations) takes around 16 GPU hours to finish.
+D.5 Simulated Preference Annotation with Golden Reward Models
+To simulate the imperfect annotation process of human labor, we consider label noises in our
+experiments following the literature (Ziegler et al., 2019; Dubois et al., 2024; Coste et al.,
+2023). However, instead of randomly injecting noise to the labeling process, we consider a
+34
+Reward Modeling
+more realistic annotation simulation using the cognitive bottleneck models studied in psychology (Stewart et al., 2005; Guest et al., 2016): the comparisons made between responses
+that have similar scores will have a higher possibility of being mislabeled, formally, we have
+P
+
+h(x, y1, y2)(r(x, y1) − r(x, y2)) > 0
+
+
+
+
+∆r
+
+= ξ(∆r), (75)
+We instantiate ξ(∆r) as σ(β∆r), the sigmoid function in determining the probability of
+getting a correct label. The β parameter here controls the annotation quality: when β =
+0, annotations are purely random, while when β → ∞, annotations are perfect. In our
+experiments, the default setting of β is 1 unless explicitly specified otherwise (as in the
+section of experiments studying performance under different noise levels in annotations.)
+D.6 Hyper-Parameters of the LGB models and MLPs
+To maximally isolate the source of gains, and separate the contribution of methods from
+their implementations, we use the identical hyper-parameter setup for all experiments (a
+single default hyper-parameter setup for LightGBM, same MLP configurations for BT and
+Classification).
+For LGB models, we use the default hyper-parameter setting of
+1 hyper - param - lgb = {’objective ’: ’binary ’,
+2 ’metric ’: ’ binary_logloss ’}
+For MLPs, we use a minimalist three-layer-feed-forward structure of
+1 hyper - param - mlp = {’activation ’: ’ReLU ’,
+2 ’units ’: ’(1024 , 512 , 1) ’,
+3 ’loss ’: ’BCELoss ’,
+4 ’optimizer ’: ’Adam ’,
+5 ’lr ’: ’0.001 ’,
+6 ’ early_stop_patience ’: ’3’,
+7 ’max_epoch ’: ’30 ’}
+While further sweeping on hyper-parameters for each setup will very likely be able to
+further improve the performance, those engineering efforts are irrelevant to the scope of our
+research focus on investigating different methods nor informative in drawing conclusions to
+answer the above questions.
+Appendix E. Additional Experiment Results on Harmless and Helpful
+Figures reporting results on changing annotation qualities. Figure 7.
+Figures reporting results on changing annotation qualities under different annotation availability. Figure 8 and Figure 9.
+Figures reporting results on changing annotation availability under different
+annotation qualities. Figure 10 and Figure 11.
+Figures reporting cross-prompt annotation results on changing annotation availability and annotation quality. Figure 12 to Figure 15
+35
+Hao Sun∗
+, Yunyi Shen∗
+, Jean-Francois Ton
+Gemma2b
+Gemma2b-SFT Gemma7b
+Gemma7b-SFT
+LLaMA3-8b
+LLaMA3-8b-SFT
+Base Models
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+1.2
+1.4
+1.6
+Golden Reward Values
+Harmless beta = 0.5 (Annotation Error Rate = 0.37)
+BT-MLP
+CLF-MLP
+CLF-LGB
+Gemma2b
+Gemma2b-SFT Gemma7b
+Gemma7b-SFT
+LLaMA3-8b
+LLaMA3-8b-SFT
+Base Models
+0
+2
+4
+6
+8
+Golden Reward Values
+Helpful beta = 0.5 (Annotation Error Rate = 0.38)
+BT-MLP
+CLF-MLP
+CLF-LGB
+Gemma2b
+Gemma2b-SFT Gemma7b
+Gemma7b-SFT
+LLaMA3-8b
+LLaMA3-8b-SFT
+Base Models
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+1.2
+1.4
+1.6
+Golden Reward Values
+Harmless beta = 0.7 (Annotation Error Rate = 0.33)
+BT-MLP
+CLF-MLP
+CLF-LGB
+Gemma2b
+Gemma2b-SFT Gemma7b
+Gemma7b-SFT
+LLaMA3-8b
+LLaMA3-8b-SFT
+Base Models
+0
+2
+4
+6
+8
+Golden Reward Values
+Helpful beta = 0.7 (Annotation Error Rate = 0.34)
+BT-MLP
+CLF-MLP
+CLF-LGB
+Gemma2b
+Gemma2b-SFT Gemma7b
+Gemma7b-SFT
+LLaMA3-8b
+LLaMA3-8b-SFT
+Base Models
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+1.2
+1.4
+1.6
+Golden Reward Values
+Harmless beta = 1 (Annotation Error Rate = 0.28)
+BT-MLP
+CLF-MLP
+CLF-LGB
+Gemma2b
+Gemma2b-SFT Gemma7b
+Gemma7b-SFT
+LLaMA3-8b
+LLaMA3-8b-SFT
+Base Models
+0
+2
+4
+6
+8
+Golden Reward Values
+Helpful beta = 1 (Annotation Error Rate = 0.3)
+BT-MLP
+CLF-MLP
+CLF-LGB
+Gemma2b
+Gemma2b-SFT Gemma7b
+Gemma7b-SFT
+LLaMA3-8b
+LLaMA3-8b-SFT
+Base Models
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+1.2
+1.4
+1.6
+Golden Reward Values
+Harmless beta = 3 (Annotation Error Rate = 0.14)
+BT-MLP
+CLF-MLP
+CLF-LGB
+Gemma2b
+Gemma2b-SFT Gemma7b
+Gemma7b-SFT
+LLaMA3-8b
+LLaMA3-8b-SFT
+Base Models
+0
+2
+4
+6
+8
+Golden Reward Values
+Helpful beta = 3 (Annotation Error Rate = 0.14)
+BT-MLP
+CLF-MLP
+CLF-LGB
+Gemma2b
+Gemma2b-SFT Gemma7b
+Gemma7b-SFT
+LLaMA3-8b
+LLaMA3-8b-SFT
+Base Models
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+1.2
+1.4
+1.6
+Golden Reward Values
+Harmless beta = 5 (Annotation Error Rate = 0.09)
+BT-MLP
+CLF-MLP
+CLF-LGB
+Gemma2b
+Gemma2b-SFT Gemma7b
+Gemma7b-SFT
+LLaMA3-8b
+LLaMA3-8b-SFT
+Base Models
+0
+2
+4
+6
+8
+Golden Reward Values
+Helpful beta = 5 (Annotation Error Rate = 0.09)
+BT-MLP
+CLF-MLP
+CLF-LGB
+Gemma2b
+Gemma2b-SFT Gemma7b
+Gemma7b-SFT
+LLaMA3-8b
+LLaMA3-8b-SFT
+Base Models
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+Golden Reward Values
+Harmless beta = 10 (Annotation Error Rate = 0.05)
+BT-MLP
+CLF-MLP
+CLF-LGB
+Gemma2b
+Gemma2b-SFT Gemma7b
+Gemma7b-SFT
+LLaMA3-8b
+LLaMA3-8b-SFT
+Base Models
+0
+2
+4
+6
+8
+Golden Reward Values
+Helpful beta = 10 (Annotation Error Rate = 0.05)
+BT-MLP
+CLF-MLP
+CLF-LGB
+Figure 7: Experiment results in bar plots on changing the annotation quality. Error bars
+are given by 5 runs by changing seeds.
+36
+Reward Modeling
+0.1 0.2 0.3
+Annotation Error Rate
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+Golden Reward Values
+Gemma2b
+0.1 0.2 0.3
+Annotation Error Rate
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+Gemma2b-SFT
+0.1 0.2 0.3
+Annotation Error Rate
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+Gemma7b
+0.1 0.2 0.3 0.4
+Annotation Error Rate
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+Gemma7b-SFT
+0.1 0.2 0.3
+Annotation Error Rate
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+LLaMA3-8b
+0.1 0.2 0.3 0.4
+Annotation Error Rate
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+LLaMA3-8b-SFT
+BT-MLP
+CLF-MLP
+CLF-LGB
+(a) 5000 annotations
+0.1 0.2 0.3
+Annotation Error Rate
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+Golden Reward Values
+Gemma2b
+0.1 0.2 0.3
+Annotation Error Rate
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+Gemma2b-SFT
+0.1 0.2 0.3
+Annotation Error Rate
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+Gemma7b
+0.1 0.2 0.3 0.4
+Annotation Error Rate
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+Gemma7b-SFT
+0.1 0.2 0.3
+Annotation Error Rate
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+LLaMA3-8b
+0.1 0.2 0.3 0.4
+Annotation Error Rate
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+LLaMA3-8b-SFT
+BT-MLP
+CLF-MLP
+CLF-LGB
+(b) 10000 annotations
+0.1 0.2 0.3
+Annotation Error Rate
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+Golden Reward Values
+Gemma2b
+0.1 0.2 0.3
+Annotation Error Rate
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+Gemma2b-SFT
+0.1 0.2 0.3
+Annotation Error Rate
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+Gemma7b
+0.1 0.2 0.3 0.4
+Annotation Error Rate
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+Gemma7b-SFT
+0.1 0.2 0.3
+Annotation Error Rate
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+LLaMA3-8b
+0.1 0.2 0.3 0.4
+Annotation Error Rate
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+LLaMA3-8b-SFT
+BT-MLP
+CLF-MLP
+CLF-LGB
+(c) 20000 annotations
+0.1 0.2 0.3
+Annotation Error Rate
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+Golden Reward Values
+Gemma2b
+0.1 0.2 0.3
+Annotation Error Rate
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+Gemma2b-SFT
+0.1 0.2 0.3
+Annotation Error Rate
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+Gemma7b
+0.1 0.2 0.3 0.4
+Annotation Error Rate
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+Gemma7b-SFT
+0.1 0.2 0.3
+Annotation Error Rate
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+LLaMA3-8b
+0.1 0.2 0.3 0.4
+Annotation Error Rate
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+LLaMA3-8b-SFT
+BT-MLP
+CLF-MLP
+CLF-LGB
+(d) 40000 annotations
+Figure 8: Harmless Dataset: additional results on changing annotation quality under different annotation availability. Error bars are given by 5 runs by changing seeds.
+37
+Hao Sun∗
+, Yunyi Shen∗
+, Jean-Francois Ton
+0.1 0.2 0.3 0.4
+Annotation Error Rate
+2
+3
+4
+5
+6
+7
+8
+9
+Golden Reward Values
+Gemma2b
+0.1 0.2 0.3
+Annotation Error Rate
+2
+3
+4
+5
+6
+7
+8
+9
+Gemma2b-SFT
+0.1 0.2 0.3 0.4
+Annotation Error Rate
+2
+3
+4
+5
+6
+7
+8
+9
+Gemma7b
+0.1 0.2 0.3
+Annotation Error Rate
+2
+3
+4
+5
+6
+7
+8
+9
+Gemma7b-SFT
+0.1 0.2 0.3 0.4
+Annotation Error Rate
+2
+3
+4
+5
+6
+7
+8
+9
+LLaMA3-8b
+0.1 0.2 0.3 0.4
+Annotation Error Rate
+2
+3
+4
+5
+6
+7
+8
+9
+LLaMA3-8b-SFT
+BT-MLP
+CLF-MLP
+CLF-LGB
+(a) 5000 annotations
+0.1 0.2 0.3 0.4
+Annotation Error Rate
+2
+3
+4
+5
+6
+7
+8
+9
+Golden Reward Values
+Gemma2b
+0.1 0.2 0.3
+Annotation Error Rate
+2
+3
+4
+5
+6
+7
+8
+9
+Gemma2b-SFT
+0.1 0.2 0.3 0.4
+Annotation Error Rate
+2
+3
+4
+5
+6
+7
+8
+9
+Gemma7b
+0.1 0.2 0.3
+Annotation Error Rate
+2
+3
+4
+5
+6
+7
+8
+9
+Gemma7b-SFT
+0.1 0.2 0.3 0.4
+Annotation Error Rate
+2
+3
+4
+5
+6
+7
+8
+9
+LLaMA3-8b
+0.1 0.2 0.3 0.4
+Annotation Error Rate
+2
+3
+4
+5
+6
+7
+8
+9
+LLaMA3-8b-SFT
+BT-MLP
+CLF-MLP
+CLF-LGB
+(b) 10000 annotations
+0.1 0.2 0.3 0.4
+Annotation Error Rate
+2
+3
+4
+5
+6
+7
+8
+9
+Golden Reward Values
+Gemma2b
+0.1 0.2 0.3
+Annotation Error Rate
+2
+3
+4
+5
+6
+7
+8
+9
+Gemma2b-SFT
+0.1 0.2 0.3 0.4
+Annotation Error Rate
+2
+3
+4
+5
+6
+7
+8
+9
+Gemma7b
+0.1 0.2 0.3
+Annotation Error Rate
+2
+3
+4
+5
+6
+7
+8
+9
+Gemma7b-SFT
+0.1 0.2 0.3 0.4
+Annotation Error Rate
+2
+3
+4
+5
+6
+7
+8
+9
+LLaMA3-8b
+0.1 0.2 0.3 0.4
+Annotation Error Rate
+2
+3
+4
+5
+6
+7
+8
+9
+LLaMA3-8b-SFT
+BT-MLP
+CLF-MLP
+CLF-LGB
+(c) 20000 annotations
+0.1 0.2 0.3 0.4
+Annotation Error Rate
+2
+3
+4
+5
+6
+7
+8
+9
+Golden Reward Values
+Gemma2b
+0.1 0.2 0.3
+Annotation Error Rate
+2
+3
+4
+5
+6
+7
+8
+9
+Gemma2b-SFT
+0.1 0.2 0.3 0.4
+Annotation Error Rate
+2
+3
+4
+5
+6
+7
+8
+9
+Gemma7b
+0.1 0.2 0.3
+Annotation Error Rate
+2
+3
+4
+5
+6
+7
+8
+9
+Gemma7b-SFT
+0.1 0.2 0.3 0.4
+Annotation Error Rate
+2
+3
+4
+5
+6
+7
+8
+9
+LLaMA3-8b
+0.1 0.2 0.3 0.4
+Annotation Error Rate
+2
+3
+4
+5
+6
+7
+8
+9
+LLaMA3-8b-SFT
+BT-MLP
+CLF-MLP
+CLF-LGB
+(d) 40000 annotations
+Figure 9: Helpful Dataset: additional results on changing annotation quality under different
+annotation availability. Error bars are given by 5 runs by changing seeds.
+38
+Reward Modeling
+10000 20000 30000 40000
+# Training Annotations
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+Golden Reward Values
+Gemma2b
+10000 20000 30000 40000
+# Training Annotations
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+Gemma2b-SFT
+10000 20000 30000 40000
+# Training Annotations
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+Gemma7b
+10000 20000 30000 40000
+# Training Annotations
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+Gemma7b-SFT
+10000 20000 30000 40000
+# Training Annotations
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+LLaMA3-8b
+10000 20000 30000 40000
+# Training Annotations
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+LLaMA3-8b-SFT
+BT-MLP
+CLF-MLP
+CLF-LGB
+(a) β = 0.5
+10000 20000 30000 40000
+# Training Annotations
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+Golden Reward Values
+Gemma2b
+10000 20000 30000 40000
+# Training Annotations
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+Gemma2b-SFT
+10000 20000 30000 40000
+# Training Annotations
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+Gemma7b
+10000 20000 30000 40000
+# Training Annotations
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+Gemma7b-SFT
+10000 20000 30000 40000
+# Training Annotations
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+LLaMA3-8b
+10000 20000 30000 40000
+# Training Annotations
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+LLaMA3-8b-SFT
+BT-MLP
+CLF-MLP
+CLF-LGB
+(b) β = 0.7
+10000 20000 30000 40000
+# Training Annotations
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+Golden Reward Values
+Gemma2b
+10000 20000 30000 40000
+# Training Annotations
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+Gemma2b-SFT
+10000 20000 30000 40000
+# Training Annotations
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+Gemma7b
+10000 20000 30000 40000
+# Training Annotations
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+Gemma7b-SFT
+10000 20000 30000 40000
+# Training Annotations
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+LLaMA3-8b
+10000 20000 30000 40000
+# Training Annotations
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+LLaMA3-8b-SFT
+BT-MLP
+CLF-MLP
+CLF-LGB
+(c) β = 1.0
+10000 20000 30000 40000
+# Training Annotations
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+Golden Reward Values
+Gemma2b
+10000 20000 30000 40000
+# Training Annotations
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+Gemma2b-SFT
+10000 20000 30000 40000
+# Training Annotations
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+Gemma7b
+10000 20000 30000 40000
+# Training Annotations
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+Gemma7b-SFT
+10000 20000 30000 40000
+# Training Annotations
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+LLaMA3-8b
+10000 20000 30000 40000
+# Training Annotations
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+LLaMA3-8b-SFT
+BT-MLP
+CLF-MLP
+CLF-LGB
+(d) β = 3.0
+10000 20000 30000 40000
+# Training Annotations
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+Golden Reward Values
+Gemma2b
+10000 20000 30000 40000
+# Training Annotations
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+Gemma2b-SFT
+10000 20000 30000 40000
+# Training Annotations
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+Gemma7b
+10000 20000 30000 40000
+# Training Annotations
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+Gemma7b-SFT
+10000 20000 30000 40000
+# Training Annotations
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+LLaMA3-8b
+10000 20000 30000 40000
+# Training Annotations
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+LLaMA3-8b-SFT
+BT-MLP
+CLF-MLP
+CLF-LGB
+(e) β = 5.0
+10000 20000 30000 40000
+# Training Annotations
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+Golden Reward Values
+Gemma2b
+10000 20000 30000 40000
+# Training Annotations
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+Gemma2b-SFT
+10000 20000 30000 40000
+# Training Annotations
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+Gemma7b
+10000 20000 30000 40000
+# Training Annotations
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+Gemma7b-SFT
+10000 20000 30000 40000
+# Training Annotations
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+LLaMA3-8b
+10000 20000 30000 40000
+# Training Annotations
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+LLaMA3-8b-SFT
+BT-MLP
+CLF-MLP
+CLF-LGB
+(f) β = 10.0
+Figure 10: Harmless Dataset: additional results on changing annotation availability under
+different annotation quality. Error bars are given by 5 runs by changing seeds.
+39
+Hao Sun∗
+, Yunyi Shen∗
+, Jean-Francois Ton
+10000 20000 30000 40000
+# Training Annotations
+2
+4
+6
+8
+Golden Reward Values
+Gemma2b
+10000 20000 30000 40000
+# Training Annotations
+2
+4
+6
+8
+Gemma2b-SFT
+10000 20000 30000 40000
+# Training Annotations
+2
+4
+6
+8
+Gemma7b
+10000 20000 30000 40000
+# Training Annotations
+2
+4
+6
+8
+Gemma7b-SFT
+10000 20000 30000 40000
+# Training Annotations
+2
+4
+6
+8
+LLaMA3-8b
+10000 20000 30000 40000
+# Training Annotations
+2
+4
+6
+8
+LLaMA3-8b-SFT
+BT-MLP
+CLF-MLP
+CLF-LGB
+(a) β = 0.5
+10000 20000 30000 40000
+# Training Annotations
+2
+4
+6
+8
+Golden Reward Values
+Gemma2b
+10000 20000 30000 40000
+# Training Annotations
+2
+4
+6
+8
+Gemma2b-SFT
+10000 20000 30000 40000
+# Training Annotations
+2
+4
+6
+8
+Gemma7b
+10000 20000 30000 40000
+# Training Annotations
+2
+4
+6
+8
+Gemma7b-SFT
+10000 20000 30000 40000
+# Training Annotations
+2
+4
+6
+8
+LLaMA3-8b
+10000 20000 30000 40000
+# Training Annotations
+2
+4
+6
+8
+LLaMA3-8b-SFT
+BT-MLP
+CLF-MLP
+CLF-LGB
+(b) β = 0.7
+10000 20000 30000 40000
+# Training Annotations
+2
+4
+6
+8
+Golden Reward Values
+Gemma2b
+10000 20000 30000 40000
+# Training Annotations
+2
+4
+6
+8
+Gemma2b-SFT
+10000 20000 30000 40000
+# Training Annotations
+2
+4
+6
+8
+Gemma7b
+10000 20000 30000 40000
+# Training Annotations
+2
+4
+6
+8
+Gemma7b-SFT
+10000 20000 30000 40000
+# Training Annotations
+2
+4
+6
+8
+LLaMA3-8b
+10000 20000 30000 40000
+# Training Annotations
+2
+4
+6
+8
+LLaMA3-8b-SFT
+BT-MLP
+CLF-MLP
+CLF-LGB
+(c) β = 1.0
+10000 20000 30000 40000
+# Training Annotations
+2
+4
+6
+8
+Golden Reward Values
+Gemma2b
+10000 20000 30000 40000
+# Training Annotations
+2
+4
+6
+8
+Gemma2b-SFT
+10000 20000 30000 40000
+# Training Annotations
+2
+4
+6
+8
+Gemma7b
+10000 20000 30000 40000
+# Training Annotations
+2
+4
+6
+8
+Gemma7b-SFT
+10000 20000 30000 40000
+# Training Annotations
+2
+4
+6
+8
+LLaMA3-8b
+10000 20000 30000 40000
+# Training Annotations
+2
+4
+6
+8
+LLaMA3-8b-SFT
+BT-MLP
+CLF-MLP
+CLF-LGB
+(d) β = 3.0
+10000 20000 30000 40000
+# Training Annotations
+2
+4
+6
+8
+Golden Reward Values
+Gemma2b
+10000 20000 30000 40000
+# Training Annotations
+2
+4
+6
+8
+Gemma2b-SFT
+10000 20000 30000 40000
+# Training Annotations
+2
+4
+6
+8
+Gemma7b
+10000 20000 30000 40000
+# Training Annotations
+2
+4
+6
+8
+Gemma7b-SFT
+10000 20000 30000 40000
+# Training Annotations
+2
+4
+6
+8
+LLaMA3-8b
+10000 20000 30000 40000
+# Training Annotations
+2
+4
+6
+8
+LLaMA3-8b-SFT
+BT-MLP
+CLF-MLP
+CLF-LGB
+(e) β = 5.0
+10000 20000 30000 40000
+# Training Annotations
+2
+4
+6
+8
+Golden Reward Values
+Gemma2b
+10000 20000 30000 40000
+# Training Annotations
+2
+4
+6
+8
+Gemma2b-SFT
+10000 20000 30000 40000
+# Training Annotations
+2
+4
+6
+8
+Gemma7b
+10000 20000 30000 40000
+# Training Annotations
+2
+4
+6
+8
+Gemma7b-SFT
+10000 20000 30000 40000
+# Training Annotations
+2
+4
+6
+8
+LLaMA3-8b
+10000 20000 30000 40000
+# Training Annotations
+2
+4
+6
+8
+LLaMA3-8b-SFT
+BT-MLP
+CLF-MLP
+CLF-LGB
+(f) β = 10.0
+Figure 11: Helpful Dataset: additional results on changing annotation availability under
+different annotation quality. Error bars are given by 5 runs by changing seeds.
+40
+Reward Modeling
+Figure 12: Results on cross-prompt comparisons, with 5000 annotations, β = 1. Error bars
+are given by 5 runs by changing seeds.
+41
+Hao Sun∗
+, Yunyi Shen∗
+, Jean-Francois Ton
+Figure 13: Results on cross-prompt comparisons, with 5000 annotations, β = 10. Error
+bars are given by 5 runs by changing seeds.
+42
+Reward Modeling
+Figure 14: Results on cross-prompt comparisons, with 40000 annotations, β = 1. Error
+bars are given by 5 runs by changing seeds.
+43
+Hao Sun∗
+, Yunyi Shen∗
+, Jean-Francois Ton
+Figure 15: Results on cross-prompt comparisons, with 40000 annotations, β = 10. Error
+bars are given by 5 runs by changing seeds.
+44
+Reward Modeling
+Appendix F. Additional Results on Helpsteer and UltraFeedback
+We additionally experiment with the Helpsteer dataset (Wang et al., 2023) and UltraFeedback dataset (Cui et al., 2023). On both tasks, we use the same open-sourced golden reward
+model as we used for the helpfulness evaluation (Dong et al., 2023).
+Figure 16: Comparison between BT and Classification reward models. In general, the classification
+reward models achieve better performance than the BT reward models, with the added flexibility of
+using off-the-shelf classifiers beyond MLPs. Error bars are given by 5 runs with different seeds.
+0.05 0.10 0.15 0.20 0.25 0.30 0.35
+Annotation Error Rate
+3.0
+3.5
+4.0
+4.5
+5.0
+5.5
+Golden Reward Values
+Gemma2b-SFT
+0.05 0.10 0.15 0.20 0.25 0.30 0.35
+Annotation Error Rate
+4.0
+4.5
+5.0
+5.5
+6.0
+6.5
+7.0
+Gemma7b-SFT
+0.05 0.10 0.15 0.20 0.25 0.30 0.35
+Annotation Error Rate
+4.50
+4.75
+5.00
+5.25
+5.50
+5.75
+6.00
+LLaMA3-8b-SFT
+BT-MLP
+CLF-MLP
+CLF-LGB
+0.05 0.10 0.15 0.20 0.25 0.30 0.35
+Annotation Error Rate
+3.0
+3.5
+4.0
+4.5
+Golden Reward Values
+Gemma2b-SFT
+0.05 0.10 0.15 0.20 0.25 0.30 0.35
+Annotation Error Rate
+5.5
+6.0
+6.5
+7.0
+7.5
+Gemma7b-SFT
+0.05 0.10 0.15 0.20 0.25 0.30 0.35
+Annotation Error Rate
+4.8
+5.0
+5.2
+5.4
+5.6
+5.8
+LLaMA3-8b-SFT
+BT-MLP
+CLF-MLP
+CLF-LGB
+Figure 17: Changing the annotation quality. Dataset: Helpsteer, UltraFeedback.
+0.2 0.4 0.6 0.8 1.0
+# Training Annotations
+3.0
+3.5
+4.0
+4.5
+5.0
+Golden Reward Values
+Gemma2b-SFT
+0.2 0.4 0.6 0.8 1.0
+# Training Annotations
+5.0
+5.5
+6.0
+6.5
+7.0
+Gemma7b-SFT
+0.2 0.4 0.6 0.8 1.0
+# Training Annotations
+4.75
+5.00
+5.25
+5.50
+5.75
+6.00
+6.25
+LLaMA3-8b-SFT
+BT-MLP
+CLF-MLP
+CLF-LGB
+0.2 0.4 0.6 0.8 1.0
+# Training Annotations
+3.4
+3.6
+3.8
+4.0
+4.2
+4.4
+4.6
+4.8
+Golden Reward Values
+Gemma2b-SFT
+0.2 0.4 0.6 0.8 1.0
+# Training Annotations
+5.5
+6.0
+6.5
+7.0
+7.5
+Gemma7b-SFT
+0.2 0.4 0.6 0.8 1.0
+# Training Annotations
+5.2
+5.4
+5.6
+5.8
+6.0
+LLaMA3-8b-SFT
+BT-MLP
+CLF-MLP
+CLF-LGB
+Figure 18: Changing the annotation quality. Dataset: Helpsteer, UltraFeedback.
+45
+Hao Sun∗
+, Yunyi Shen∗
+, Jean-Francois Ton
+Figure 19: Results comparing cross-prompt comparison based annotations. Preference annotations
+on cross-prompt comparisons outperform same-prompt comparisons.
+Figure 20: Results comparing cross-prompt comparison-based annotations on synthetically generated similar or diversified comparison pairs. Cross-prompt comparison significantly improves the
+performance of reward modeling with same-prompt response pairs lacking diversity. Error bars are
+from 5 runs with different seeds.
+46
+Reward Modeling
+References
+A. Agarwal, D. Hsu, S. Kale, J. Langford, L. Li, and R. Schapire. Taming the monster: A
+fast and simple algorithm for contextual bandits. In International conference on machine
+learning, pages 1638–1646. PMLR, 2014.
+M. G. Azar, M. Rowland, B. Piot, D. Guo, D. Calandriello, M. Valko, and R. Munos.
+A general theoretical paradigm to understand learning from human preferences. arXiv
+preprint arXiv:2310.12036, 2023.
+Y. Bai, A. Jones, K. Ndousse, A. Askell, A. Chen, N. DasSarma, D. Drain, S. Fort, D. Ganguli, T. Henighan, et al. Training a helpful and harmless assistant with reinforcement
+learning from human feedback. arXiv preprint arXiv:2204.05862, 2022a.
+Y. Bai, S. Kadavath, S. Kundu, A. Askell, J. Kernion, A. Jones, A. Chen, A. Goldie,
+A. Mirhoseini, C. McKinnon, et al. Constitutional ai: Harmlessness from ai feedback.
+arXiv preprint arXiv:2212.08073, 2022b.
+C. Bent´ejac, A. Cs¨org˝o, and G. Mart´ınez-Mu˜noz. A comparative analysis of gradient boosting algorithms. Artificial Intelligence Review, 54:1937–1967, 2021.
+U. Bockenholt. A logistic representation of multivariate paired-comparison models. Journal
+of mathematical psychology, 32(1):44–63, 1988.
+T. Bos and J. Schmidt-Hieber. Convergence rates of deep relu networks for multiclass
+classification. Electronic Journal of Statistics, 16(1):2724–2773, 2022.
+R. A. Bradley and M. E. Terry. Rank analysis of incomplete block designs: I. the method
+of paired comparisons. Biometrika, 39(3/4):324–345, 1952.
+J. Bromley, I. Guyon, Y. LeCun, E. S¨ackinger, and R. Shah. Signature verification using a”
+siamese” time delay neural network. Advances in neural information processing systems,
+6, 1993.
+M. Cattelan. Models for paired comparison data: A review with emphasis on dependent
+data. Statistical Science, 2012.
+X. Chen and D. Pouzo. Estimation of nonparametric conditional moment models with
+possibly nonsmooth generalized residuals. Econometrica, 80(1):277–321, 2012.
+W.-L. Chiang, L. Zheng, Y. Sheng, A. N. Angelopoulos, T. Li, D. Li, H. Zhang, B. Zhu,
+M. Jordan, J. E. Gonzalez, et al. Chatbot arena: An open platform for evaluating llms
+by human preference. arXiv preprint arXiv:2403.04132, 2024.
+P. F. Christiano, J. Leike, T. Brown, M. Martic, S. Legg, and D. Amodei. Deep reinforcement learning from human preferences. Advances in neural information processing
+systems, 30, 2017.
+T. Coste, U. Anwar, R. Kirk, and D. Krueger. Reward model ensembles help mitigate
+overoptimization. arXiv preprint arXiv:2310.02743, 2023.
+47
+Hao Sun∗
+, Yunyi Shen∗
+, Jean-Francois Ton
+G. Cui, L. Yuan, N. Ding, G. Yao, W. Zhu, Y. Ni, G. Xie, Z. Liu, and M. Sun. Ultrafeedback:
+Boosting language models with high-quality feedback. arXiv preprint arXiv:2310.01377,
+2023.
+G. De Soete and S. Winsberg. A thurstonian pairwise choice model with univariate and
+multivariate spline transformations. Psychometrika, 58(2):233–256, 1993.
+H. Dong, W. Xiong, D. Goyal, R. Pan, S. Diao, J. Zhang, K. Shum, and T. Zhang. Raft:
+Reward ranked finetuning for generative foundation model alignment. arXiv preprint
+arXiv:2304.06767, 2023.
+H. Dong, W. Xiong, B. Pang, H. Wang, H. Zhao, Y. Zhou, N. Jiang, D. Sahoo, C. Xiong,
+and T. Zhang. Rlhf workflow: From reward modeling to online rlhf. arXiv preprint
+arXiv:2405.07863, 2024.
+Y. Dubois, C. X. Li, R. Taori, T. Zhang, I. Gulrajani, J. Ba, C. Guestrin, P. S. Liang,
+and T. B. Hashimoto. Alpacafarm: A simulation framework for methods that learn from
+human feedback. Advances in Neural Information Processing Systems, 36, 2024.
+A. E. Elo. The proposed uscf rating system, its development, theory, and applications.
+Chess life, 22(8):242–247, 1967.
+K. Ethayarajh, W. Xu, N. Muennighoff, D. Jurafsky, and D. Kiela. Kto: Model alignment
+as prospect theoretic optimization. arXiv preprint arXiv:2402.01306, 2024.
+L. R. Ford Jr. Solution of a ranking problem from binary comparisons. The American
+Mathematical Monthly, 64(8P2):28–33, 1957.
+L. Gao, J. Schulman, and J. Hilton. Scaling laws for reward model overoptimization. In
+International Conference on Machine Learning, pages 10835–10866. PMLR, 2023.
+M. Gardner. Paradox of nontransitive dice and elusive principle of indifference. Scientific
+American, 223(6):110, 1970.
+M. E. Glickman. A comprehensive guide to chess ratings. American Chess Journal, 3(1):
+59–102, 1995.
+M. E. Glickman and A. C. Jones. Rating the chess rating system. CHANCE-BERLIN
+THEN NEW YORK-, 12:21–28, 1999.
+D. Guest, J. S. Adelman, and C. Kent. Relative judgement is relatively difficult: Evidence
+against the role of relative judgement in absolute identification. Psychonomic Bulletin &
+Review, 23:922–931, 2016.
+C. Guo, G. Pleiss, Y. Sun, and K. Q. Weinberger. On calibration of modern neural networks.
+In International conference on machine learning, pages 1321–1330. PMLR, 2017.
+S. Guo, B. Zhang, T. Liu, T. Liu, M. Khalman, F. Llinares, A. Rame, T. Mesnard, Y. Zhao,
+B. Piot, et al. Direct language model alignment from online ai feedback. arXiv preprint
+arXiv:2402.04792, 2024.
+48
+Reward Modeling
+R. Han, R. Ye, C. Tan, and K. Chen. Asymptotic theory of sparse bradley–terry model.
+The Annals of Applied Probability, 30(5):2491–2515, 2020.
+H. Ivison, Y. Wang, J. Liu, Z. Wu, V. Pyatkin, N. Lambert, N. A. Smith, Y. Choi, and
+H. Hajishirzi. Unpacking dpo and ppo: Disentangling best practices for learning from
+preference feedback. arXiv preprint arXiv:2406.09279, 2024.
+G. Ke, Q. Meng, T. Finley, T. Wang, W. Chen, W. Ma, Q. Ye, and T.-Y. Liu. Lightgbm: A
+highly efficient gradient boosting decision tree. Advances in neural information processing
+systems, 30, 2017.
+W. Kwon, Z. Li, S. Zhuang, Y. Sheng, L. Zheng, C. H. Yu, J. E. Gonzalez, H. Zhang, and
+I. Stoica. Efficient memory management for large language model serving with pagedattention. In Proceedings of the ACM SIGOPS 29th Symposium on Operating Systems
+Principles, 2023.
+T. Lattimore and C. Szepesv´ari. Bandit algorithms. Cambridge University Press, 2020.
+H. Lee, S. Phatale, H. Mansoor, K. Lu, T. Mesnard, C. Bishop, V. Carbune, and A. Rastogi.
+Rlaif: Scaling reinforcement learning from human feedback with ai feedback. arXiv
+preprint arXiv:2309.00267, 2023.
+Z. Li, T. Xu, Y. Zhang, Y. Yu, R. Sun, and Z.-Q. Luo. Remax: A simple, effective, and
+efficient method for aligning large language models. arXiv preprint arXiv:2310.10505,
+2023.
+T. Liu, Y. Zhao, R. Joshi, M. Khalman, M. Saleh, P. J. Liu, and J. Liu. Statistical rejection
+sampling improves preference optimization. arXiv preprint arXiv:2309.06657, 2023.
+Z. Liu, Y. Zhang, Z. Fu, Z. Yang, and Z. Wang. Learning from demonstration: Provably
+efficient adversarial policy imitation with linear function approximation. In International
+conference on machine learning, pages 14094–14138. PMLR, 2022.
+Z. Liu, M. Lu, S. Zhang, B. Liu, H. Guo, Y. Yang, J. Blanchet, and Z. Wang. Provably
+mitigating overoptimization in rlhf: Your sft loss is implicitly an adversarial regularizer.
+arXiv preprint arXiv:2405.16436, 2024.
+R. D. Luce. Individual choice behavior, volume 4. Wiley New York, 1959.
+A. Meta. Introducing meta llama 3: The most capable openly available llm to date. Meta
+AI, 2024.
+R. Munos, M. Valko, D. Calandriello, M. G. Azar, M. Rowland, Z. D. Guo, Y. Tang,
+M. Geist, T. Mesnard, A. Michi, et al. Nash learning from human feedback. arXiv
+preprint arXiv:2312.00886, 2023.
+L. Ouyang, J. Wu, X. Jiang, D. Almeida, C. Wainwright, P. Mishkin, C. Zhang, S. Agarwal,
+K. Slama, A. Ray, et al. Training language models to follow instructions with human
+feedback. Advances in Neural Information Processing Systems, 35:27730–27744, 2022.
+49
+Hao Sun∗
+, Yunyi Shen∗
+, Jean-Francois Ton
+R. Rafailov, A. Sharma, E. Mitchell, S. Ermon, C. D. Manning, and C. Finn. Direct
+preference optimization: Your language model is secretly a reward model. arXiv preprint
+arXiv:2305.18290, 2023.
+R. Rafailov, A. Sharma, E. Mitchell, C. D. Manning, S. Ermon, and C. Finn. Direct
+preference optimization: Your language model is secretly a reward model. Advances in
+Neural Information Processing Systems, 36, 2024.
+J. Schmidt-Hieber. Nonparametric regression using deep neural networks with relu activation function. Annals of Statistics, 2020.
+J. Schulman, F. Wolski, P. Dhariwal, A. Radford, and O. Klimov. Proximal policy optimization algorithms. arXiv preprint arXiv:1707.06347, 2017.
+R. N. Shepard. Stimulus and response generalization: A stochastic model relating generalization to distance in psychological space. Psychometrika, 22(4):325–345, 1957.
+G. Simons and Y.-C. Yao. Asymptotics when the number of parameters tends to infinity
+in the bradley-terry model for paired comparisons. The Annals of Statistics, 27(3):1041–
+1060, 1999.
+A. Springall. Response surface fitting using a generalization of the bradley-terry paired
+comparison model. Journal of the Royal Statistical Society Series C: Applied Statistics,
+22(1):59–68, 1973.
+N. Stewart, G. D. Brown, and N. Chater. Absolute identification by relative judgment.
+Psychological review, 112(4):881, 2005.
+N. Stiennon, L. Ouyang, J. Wu, D. Ziegler, R. Lowe, C. Voss, A. Radford, D. Amodei,
+and P. F. Christiano. Learning to summarize with human feedback. Advances in Neural
+Information Processing Systems, 33:3008–3021, 2020.
+H. Sun. Reinforcement learning in the era of llms: What is essential? what is needed? an
+rl perspective on rlhf, prompting, and beyond. arXiv preprint arXiv:2310.06147, 2023.
+H. Sun and M. van der Schaar. Inverse-rlignment: Inverse reinforcement learning from
+demonstrations for llm alignment. arXiv preprint arXiv:2405.15624, 2024.
+H. Sun, T. Pouplin, N. Astorga, T. Liu, and M. van der Schaar. Improving llm generation with inverse and forward alignment: Reward modeling, prompting, fine-tuning, and
+inference-time optimization. In The First Workshop on System-2 Reasoning at Scale,
+NeurIPS’24.
+H. Sun, A. H¨uy¨uk, and M. van der Schaar. Query-dependent prompt evaluation and optimization with offline inverse rl. In The Twelfth International Conference on Learning
+Representations, 2023.
+Y. Tang, Z. D. Guo, Z. Zheng, D. Calandriello, R. Munos, M. Rowland, P. H. Richemond,
+M. Valko, B. A. Pires, and B. Piot. Generalized preference optimization: A unified ´
+approach to offline alignment. arXiv preprint arXiv:2402.05749, 2024.
+50
+Reward Modeling
+G. Team, T. Mesnard, C. Hardin, R. Dadashi, S. Bhupatiraju, S. Pathak, L. Sifre,
+M. Rivi`ere, M. S. Kale, J. Love, et al. Gemma: Open models based on gemini research
+and technology. arXiv preprint arXiv:2403.08295, 2024.
+L. Thurstone. A law of comparative judgment. Psychological Review, 34(4), 1927.
+H. Touvron, L. Martin, K. Stone, P. Albert, A. Almahairi, Y. Babaei, N. Bashlykov, S. Batra, P. Bhargava, S. Bhosale, et al. Llama 2: Open foundation and fine-tuned chat models.
+arXiv preprint arXiv:2307.09288, 2023.
+H. Tran and B. Chris Glaze. Snorkel-mistral-pairrm-dpo, 2024.
+A. Tversky and D. Kahneman. Advances in prospect theory: Cumulative representation of
+uncertainty. Journal of Risk and uncertainty, 5:297–323, 1992.
+L. von Werra, Y. Belkada, L. Tunstall, E. Beeching, T. Thrush, N. Lambert, and S. Huang.
+Trl: Transformer reinforcement learning. https://github.com/huggingface/trl, 2020.
+Z. Wang, Y. Dong, J. Zeng, V. Adams, M. N. Sreedhar, D. Egert, O. Delalleau, J. P.
+Scowcroft, N. Kant, A. Swope, et al. Helpsteer: Multi-attribute helpfulness dataset for
+steerlm. arXiv preprint arXiv:2311.09528, 2023.
+W. Wu, B. W. Junker, and N. Niezink. Asymptotic comparison of identifying constraints
+for bradley-terry models. arXiv preprint arXiv:2205.04341, 2022.
+S. Xu, W. Fu, J. Gao, W. Ye, W. Liu, Z. Mei, G. Wang, C. Yu, and Y. Wu. Is dpo superior
+to ppo for llm alignment? a comprehensive study. arXiv preprint arXiv:2404.10719, 2024.
+R. Yang, R. Ding, Y. Lin, H. Zhang, and T. Zhang. Regularizing hidden states enables
+learning generalizable reward model for llms. arXiv preprint arXiv:2406.10216, 2024a.
+R. Yang, X. Pan, F. Luo, S. Qiu, H. Zhong, D. Yu, and J. Chen. Rewards-in-context:
+Multi-objective alignment of foundation models with dynamic preference adjustment.
+arXiv preprint arXiv:2402.10207, 2024b.
+A. Yara and Y. Terada. Nonparametric logistic regression with deep learning. arXiv preprint
+arXiv:2401.12482, 2024.
+Y. Yin, Z. Wang, Y. Gu, H. Huang, W. Chen, and M. Zhou. Relative preference optimization: Enhancing llm alignment through contrasting responses across identical and diverse
+prompts. arXiv preprint arXiv:2402.10958, 2024.
+Z. Yuan, H. Yuan, C. Tan, W. Wang, S. Huang, and F. Huang. Rrhf: Rank responses to align
+language models with human feedback without tears. arXiv preprint arXiv:2304.05302,
+2023.
+L. Zhang, A. Hosseini, H. Bansal, M. Kazemi, A. Kumar, and R. Agarwal. Generative
+verifiers: Reward modeling as next-token prediction. arXiv preprint arXiv:2408.15240,
+2024.
+51
+Hao Sun∗
+, Yunyi Shen∗
+, Jean-Francois Ton
+Y. Zhao, R. Joshi, T. Liu, M. Khalman, M. Saleh, and P. J. Liu. Slic-hf: Sequence likelihood
+calibration with human feedback. arXiv preprint arXiv:2305.10425, 2023.
+R. Zheng, S. Dou, S. Gao, Y. Hua, W. Shen, B. Wang, Y. Liu, S. Jin, Q. Liu, Y. Zhou, et al.
+Secrets of rlhf in large language models part i: Ppo. arXiv preprint arXiv:2307.04964,
+2023.
+R. Zheng, H. Guo, Z. Liu, X. Zhang, Y. Yao, X. Xu, Z. Wang, Z. Xi, T. Gui, Q. Zhang, et al.
+Toward optimal llm alignments using two-player games. arXiv preprint arXiv:2406.10977,
+2024.
+D. M. Ziegler, N. Stiennon, J. Wu, T. B. Brown, A. Radford, D. Amodei, P. Christiano,
+and G. Irving. Fine-tuning language models from human preferences. arXiv preprint
+arXiv:1909.08593, 2019.
+52
